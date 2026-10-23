@@ -34,7 +34,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response, next:
         success: true,
         data: {
           hasCompany: false,
-          stats: { views: 0, clicks: 0, ctr: 0, currentRank: null, currentBid: 0 },
+          stats: { views: 0, clicks: 0, ctr: 0, clickThroughRate: 0, currentRank: null, currentBid: 0 },
           chartData: [],
         },
       });
@@ -110,6 +110,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response, next:
           views,
           clicks,
           ctr,
+          clickThroughRate: ctr,
           currentRank,
           currentBid,
         },

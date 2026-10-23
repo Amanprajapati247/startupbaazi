@@ -19,6 +19,7 @@ import { LeaderboardItem, LeaderboardConfig } from '../types';
 import { RankBadge } from '../components/RankBadge';
 import { VerifiedBadge } from '../components/VerifiedBadge';
 import { BidModal } from '../components/BidModal';
+import { LeaderboardRowSkeleton } from '../components/SkeletonLoader';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
@@ -250,9 +251,10 @@ export const LeaderboardPage: React.FC = () => {
       {/* Leaderboard Listings */}
       <div className="space-y-3">
         {isLoading ? (
-          <div className="text-center py-20 text-slate-400 space-y-3">
-            <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-xs">Updating verified leaderboard data...</p>
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5, 6, 7].map((idx) => (
+              <LeaderboardRowSkeleton key={idx} />
+            ))}
           </div>
         ) : items.length === 0 ? (
           <div className="bg-navy-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-3">

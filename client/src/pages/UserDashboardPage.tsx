@@ -216,7 +216,7 @@ export const UserDashboardPage: React.FC = () => {
             <StatCard
               label="Active Paid Bid"
               value={`₹${stats.currentBid.toLocaleString('en-IN')}`}
-              subtitle="Verified on-chain via Razorpay"
+              subtitle="Verified server-side via Razorpay"
               icon={<CreditCard className="w-5 h-5 text-emerald-400" />}
             />
             <StatCard

@@ -303,8 +303,26 @@ export class PaymentService {
       throw new AppError('Payment verification failed.', 400);
     }
 
+    // Capture snapshot of previous ranks to identify strictly displaced startups
+    const previousRanks = await prisma.listing.findMany({
+      where: { status: 'APPROVED' },
+      select: { id: true, currentRank: true },
+    });
+    const previousRankMap = new Map<string, number>();
+    for (const p of previousRanks) {
+      if (p.currentRank !== null) previousRankMap.set(p.id, p.currentRank);
+    }
+
     // Execute atomic transaction for ranking update and bid activation
     const result = await prisma.$transaction(async (tx) => {
+      // Concurrency check: verify payment has not already been settled concurrently
+      const freshPayment = await tx.payment.findUnique({
+        where: { id: payment.id },
+      });
+      if (freshPayment?.status === 'SUCCESS') {
+        return { alreadyProcessed: true, updatedPayment: freshPayment, activatedBid: null };
+      }
+
       // 1. Update Payment status
       const updatedPayment = await tx.payment.update({
         where: { id: payment.id },
@@ -352,8 +370,12 @@ export class PaymentService {
       // 5. Recalculate leaderboard ranks atomically
       await RankingService.recalculateRanks(payment.bid.leaderboardId, tx as any);
 
-      return { updatedPayment, activatedBid };
+      return { alreadyProcessed: false, updatedPayment, activatedBid };
     });
+
+    if (result.alreadyProcessed) {
+      return { success: true, alreadyProcessed: true, payment: result.updatedPayment };
+    }
 
     // 6. Fetch new listing rank to notify user
     const updatedListing = await prisma.listing.findUnique({
@@ -371,12 +393,11 @@ export class PaymentService {
       linkUrl: `/startup/${payment.bid.listing.company.slug}`,
     });
 
-    // Notify any company owners who were pushed down or outbid
+    // Notify startups that were genuinely displaced to a lower rank
     try {
-      const lowerRanks = await prisma.listing.findMany({
+      const currentListings = await prisma.listing.findMany({
         where: {
           status: 'APPROVED',
-          currentRank: { gt: newRank },
           id: { not: payment.bid.listingId },
         },
         include: {
@@ -386,17 +407,22 @@ export class PaymentService {
             },
           },
         },
-        take: 3,
       });
 
-      for (const item of lowerRanks) {
-        for (const member of item.company.members) {
-          await NotificationService.notifyOutbid({
-            outbidUserId: member.userId,
-            companyName: item.company.name,
-            newBidAmount: payment.amount,
-            leaderboardName: payment.bid.leaderboard.name,
-          });
+      for (const item of currentListings) {
+        const oldRank = previousRankMap.get(item.id);
+        const newR = item.currentRank;
+
+        // Emit notification ONLY when ranking degraded (pushed down)
+        if (oldRank !== undefined && newR !== null && newR > oldRank) {
+          for (const member of item.company.members) {
+            await NotificationService.notifyOutbid({
+              outbidUserId: member.userId,
+              companyName: item.company.name,
+              newBidAmount: payment.amount,
+              leaderboardName: payment.bid.leaderboard.name,
+            });
+          }
         }
       }
     } catch (e) {

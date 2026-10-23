@@ -76,17 +76,29 @@ export const api = {
 
   // Admin
   getAdminStats: () => request<any>('/admin/stats'),
-  getAdminListings: (status?: string, search?: string) => {
+  getAdminListings: (status?: string, search?: string, page?: number, limit?: number) => {
     const params = new URLSearchParams();
     if (status) params.append('status', status);
     if (search) params.append('search', search);
+    if (page) params.append('page', page.toString());
+    if (limit) params.append('limit', limit.toString());
     return request<any>(`/admin/listings?${params.toString()}`);
   },
   updateListingStatus: (id: string, status: string, rejectionReason?: string) =>
     request<any>(`/admin/listings/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, rejectionReason }) }),
   toggleListingVerification: (id: string, isVerified: boolean) =>
     request<any>(`/admin/listings/${id}/verify`, { method: 'PATCH', body: JSON.stringify({ isVerified }) }),
-  getAdminPayments: () => request<any>('/admin/payments'),
+  getAdminPayments: (status?: string, search?: string, page?: number, limit?: number) => {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (search) params.append('search', search);
+    if (page) params.append('page', page.toString());
+    if (limit) params.append('limit', limit.toString());
+    return request<any>(`/admin/payments?${params.toString()}`);
+  },
+  refundPayment: (paymentId: string, reason?: string) =>
+    request<any>('/admin/refund', { method: 'POST', body: JSON.stringify({ paymentId, reason }) }),
+  getAdminSuspiciousBids: () => request<any>('/admin/suspicious-bids'),
   getAdminAuditLogs: () => request<any>('/admin/audit-logs'),
   updateLeaderboardRules: (payload: { id: string; minBidAmount: number; minBidIncrement: number }) =>
     request<any>('/admin/leaderboard-rules', { method: 'PATCH', body: JSON.stringify(payload) }),

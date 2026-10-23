@@ -98,7 +98,7 @@ router.post('/webhook', async (req: Request, res: Response, next: NextFunction) 
     });
 
     if (existing) {
-      return res.status(200).json({ message: 'Event already processed' });
+      return res.status(200).json({ status: 'already_processed', message: 'Event already processed' });
     }
 
     // 2. Record incoming webhook event

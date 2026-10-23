@@ -84,7 +84,7 @@ model Category {
 
 model Listing {
   id               String               @id @default(uuid())
-  companyId        String
+  companyId        String               @unique
   company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   status           String               @default("PENDING_APPROVAL")
   rejectionReason  String?

@@ -314,9 +314,17 @@ async function main() {
       },
     });
 
-    // Create listing
-    const listing = await prisma.listing.create({
-      data: {
+    // Create or update listing with unique company constraint
+    const listing = await prisma.listing.upsert({
+      where: { companyId: company.id },
+      update: {
+        status: s.status,
+        isVerified: s.isVerified,
+        verifiedAt: s.isVerified ? new Date() : null,
+        currentRank: s.rank,
+        currentBidAmount: s.bidAmount,
+      },
+      create: {
         companyId: company.id,
         status: s.status,
         isVerified: s.isVerified,
@@ -328,33 +336,49 @@ async function main() {
       },
     });
 
-    // If active bid, record bid and payment
+    // If active bid, record bid and payment idempotently
     if (s.bidAmount > 0) {
-      const bid = await prisma.bid.create({
-        data: {
+      const existingBid = await prisma.bid.findFirst({
+        where: {
           listingId: listing.id,
           leaderboardId: leaderboard.id,
-          userId: founder.id,
-          amount: s.bidAmount,
           status: 'ACTIVE',
         },
       });
 
-      await prisma.payment.create({
-        data: {
-          bidId: bid.id,
-          userId: founder.id,
-          razorpayOrderId: `order_seed_${s.slug}`,
-          razorpayPaymentId: `pay_seed_${s.slug}`,
-          razorpaySignature: 'seed_verified_signature',
-          amount: s.bidAmount,
-          currency: 'INR',
-          status: 'SUCCESS',
-          metadata: JSON.stringify({ seeded: true }),
-        },
-      });
+      if (!existingBid) {
+        const bid = await prisma.bid.create({
+          data: {
+            listingId: listing.id,
+            leaderboardId: leaderboard.id,
+            userId: founder.id,
+            amount: s.bidAmount,
+            status: 'ACTIVE',
+          },
+        });
+
+        await prisma.payment.upsert({
+          where: { bidId: bid.id },
+          update: {},
+          create: {
+            bidId: bid.id,
+            userId: founder.id,
+            razorpayOrderId: `order_seed_${s.slug}`,
+            razorpayPaymentId: `pay_seed_${s.slug}`,
+            razorpaySignature: 'seed_verified_signature',
+            amount: s.bidAmount,
+            currency: 'INR',
+            status: 'SUCCESS',
+            metadata: JSON.stringify({ seeded: true, isDemoData: true }),
+          },
+        });
+      }
     }
   }
+
+  // Authoritatively recalculate rankings
+  const { RankingService } = await import('../src/services/rankingService');
+  await RankingService.recalculateRanks(leaderboard.id);
 
   console.log('✅ Seeded 11 Indian startups with verified bids and leaderboard ranks!');
 }

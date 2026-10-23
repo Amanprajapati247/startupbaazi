@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Building2,
@@ -10,11 +10,15 @@ import {
   ArrowLeft,
   ShieldCheck,
   Check,
-  AlertCircle
+  AlertCircle,
+  RotateCcw,
+  Save
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+
+const DRAFT_KEY = 'startupbaazi_submission_draft';
 
 export const SubmitStartupPage: React.FC = () => {
   const navigate = useNavigate();
@@ -25,6 +29,7 @@ export const SubmitStartupPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submissionSuccess, setSubmissionSuccess] = useState<boolean>(false);
   const [createdSlug, setCreatedSlug] = useState<string>('');
+  const [draftRestored, setDraftRestored] = useState<boolean>(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -47,6 +52,68 @@ export const SubmitStartupPage: React.FC = () => {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Restore draft on initial mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setFormData((prev) => ({ ...prev, ...parsed, agreeToTerms: false }));
+        setDraftRestored(true);
+      }
+    } catch (e) {
+      console.warn('Failed to parse draft from localStorage');
+    }
+  }, []);
+
+  // Save draft whenever formData changes (except terms checkbox)
+  const updateFormData = (patch: Partial<typeof formData>) => {
+    setFormData((prev) => {
+      const updated = { ...prev, ...patch };
+      try {
+        const { agreeToTerms, ...toSave } = updated;
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(toSave));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const handleClearDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+      setFormData({
+        name: '',
+        tagline: '',
+        description: '',
+        websiteUrl: '',
+        logoUrl: '',
+        industry: 'AI & Machine Learning',
+        hqCity: 'Bengaluru',
+        hqState: 'Karnataka',
+        foundedYear: new Date().getFullYear(),
+        stage: 'Seed',
+        cin: '',
+        gstin: '',
+        twitterUrl: '',
+        linkedinUrl: '',
+        githubUrl: '',
+        agreeToTerms: false,
+      });
+      setDraftRestored(false);
+      showToast('Draft cleared', 'info');
+    } catch (e) {}
+  };
+
+  // Sync draft changes automatically
+  useEffect(() => {
+    try {
+      const { agreeToTerms, ...toSave } = formData;
+      if (toSave.name || toSave.tagline || toSave.websiteUrl || toSave.description) {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(toSave));
+      }
+    } catch (e) {}
+  }, [formData]);
 
   const industries = [
     'AI & Machine Learning',
@@ -152,6 +219,9 @@ export const SubmitStartupPage: React.FC = () => {
       });
 
       if (res.success) {
+        try {
+          localStorage.removeItem(DRAFT_KEY);
+        } catch (e) {}
         setCreatedSlug(res.data.company.slug);
         setSubmissionSuccess(true);
         showToast('Startup submitted for review!', 'success');
@@ -230,6 +300,24 @@ export const SubmitStartupPage: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* Draft Restored Alert */}
+      {draftRestored && (
+        <div className="flex items-center justify-between p-3.5 bg-brand-500/10 border border-brand-500/30 rounded-2xl text-xs text-brand-300">
+          <div className="flex items-center gap-2">
+            <Save className="w-4 h-4 text-brand-400 flex-shrink-0" />
+            <span>Restored an unsaved draft from your previous session.</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleClearDraft}
+            className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-white underline cursor-pointer"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Discard</span>
+          </button>
+        </div>
+      )}
 
       {/* Form Container */}
       <div className="bg-navy-900 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl">

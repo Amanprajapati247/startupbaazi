@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { prisma } from '../prisma';
 import { authenticate } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { clickLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -17,12 +18,29 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+// URL normalizer and protocol guard
+function normalizeUrl(url: string): string {
+  let trimmed = url.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    trimmed = 'https://' + trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Invalid URL protocol');
+    }
+    return parsed.origin + parsed.pathname.replace(/\/+$/, '') + (parsed.search || '');
+  } catch {
+    return trimmed;
+  }
+}
+
 const companySubmissionSchema = z.object({
-  name: z.string().min(2, 'Company name is required'),
+  name: z.string().min(2, 'Company name is required (min 2 characters)').max(100),
   tagline: z.string().min(5, 'Short tagline must be at least 5 characters').max(120, 'Tagline max 120 characters'),
-  description: z.string().min(20, 'Description must be at least 20 characters'),
-  websiteUrl: z.string().url('A valid website URL (http:// or https://) is required'),
-  logoUrl: z.string().url('A valid logo URL is required').optional().or(z.literal('')),
+  description: z.string().min(20, 'Description must be at least 20 characters').max(2000),
+  websiteUrl: z.string().min(4, 'Valid website URL is required'),
+  logoUrl: z.string().optional().or(z.literal('')),
   industry: z.string().min(2, 'Industry is required'),
   categoryId: z.string().optional(),
   hqCity: z.string().min(2, 'Headquarters city is required'),
@@ -42,6 +60,37 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     const data = companySubmissionSchema.parse(req.body);
     const userId = req.user!.userId;
 
+    const normalizedWebsite = normalizeUrl(data.websiteUrl);
+
+    // Validate logoUrl protocol if provided
+    if (data.logoUrl && data.logoUrl.trim().length > 0) {
+      const normalizedLogo = data.logoUrl.trim();
+      if (!normalizedLogo.startsWith('http://') && !normalizedLogo.startsWith('https://')) {
+        throw new AppError('Logo URL must be a valid http:// or https:// image link.', 400);
+      }
+    }
+
+    // Prevent duplicate submissions by the same user for the same company or website
+    const existingUserCompany = await prisma.companyMember.findFirst({
+      where: {
+        userId,
+        company: {
+          OR: [
+            { name: { equals: data.name } },
+            { websiteUrl: { equals: normalizedWebsite } },
+          ],
+        },
+      },
+      include: { company: true },
+    });
+
+    if (existingUserCompany) {
+      throw new AppError(
+        `You have already submitted "${existingUserCompany.company.name}". You can view and manage it from your Founder Dashboard.`,
+        409
+      );
+    }
+
     let baseSlug = slugify(data.name);
     let uniqueSlug = baseSlug;
     let counter = 1;
@@ -51,11 +100,6 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
       counter++;
     }
 
-    // Default main leaderboard
-    const mainLeaderboard = await prisma.leaderboard.findFirst({
-      where: { isActive: true },
-    });
-
     const result = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
         data: {
@@ -63,8 +107,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
           slug: uniqueSlug,
           tagline: data.tagline,
           description: data.description,
-          websiteUrl: data.websiteUrl,
-          logoUrl: data.logoUrl || `https://api.dicebear.com/7.x/shapes/svg?seed=${uniqueSlug}`,
+          websiteUrl: normalizedWebsite,
+          logoUrl: data.logoUrl?.trim() || `https://api.dicebear.com/7.x/shapes/svg?seed=${uniqueSlug}`,
           industry: data.industry,
           categoryId: data.categoryId || null,
           hqCity: data.hqCity,
@@ -73,9 +117,9 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
           stage: data.stage,
           cin: data.cin || null,
           gstin: data.gstin || null,
-          twitterUrl: data.twitterUrl || null,
-          linkedinUrl: data.linkedinUrl || null,
-          githubUrl: data.githubUrl || null,
+          twitterUrl: data.twitterUrl ? normalizeUrl(data.twitterUrl) : null,
+          linkedinUrl: data.linkedinUrl ? normalizeUrl(data.linkedinUrl) : null,
+          githubUrl: data.githubUrl ? normalizeUrl(data.githubUrl) : null,
         },
       });
 
@@ -88,9 +132,11 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         },
       });
 
-      // Create Listing in PENDING_APPROVAL status
-      const listing = await tx.listing.create({
-        data: {
+      // Create unique Listing in PENDING_APPROVAL status
+      const listing = await tx.listing.upsert({
+        where: { companyId: company.id },
+        update: {},
+        create: {
           companyId: company.id,
           status: 'PENDING_APPROVAL',
         },
@@ -146,15 +192,32 @@ router.get('/my-companies', authenticate, async (req: Request, res: Response, ne
   }
 });
 
-// GET /api/companies/:slug - Public startup profile
+// GET /api/companies/:slug - Public startup profile (Privacy-sanitized)
 router.get('/:slug', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const slug = req.params.slug as string;
 
     const company = await prisma.company.findUnique({
       where: { slug },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        tagline: true,
+        description: true,
+        websiteUrl: true,
+        logoUrl: true,
+        industry: true,
+        categoryId: true,
         category: true,
+        hqCity: true,
+        hqState: true,
+        foundedYear: true,
+        stage: true,
+        twitterUrl: true,
+        linkedinUrl: true,
+        githubUrl: true,
+        createdAt: true,
         listings: {
           select: {
             id: true,
@@ -177,9 +240,8 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction) => 
 
     const listing = company.listings[0];
 
-    // If listing is not approved, only owner or admin can view
+    // If listing is not approved, return draft preview info
     if (!listing || listing.status !== 'APPROVED') {
-      // In public view, pending listings are not shown unless explicit
       return res.status(200).json({
         success: true,
         data: {
@@ -191,23 +253,37 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction) => 
       });
     }
 
-    // Increment viewCount asynchronously
+    // Deduplicate views: Only increment viewCount once every 15 minutes per IP
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     const ipHash = crypto.createHash('sha256').update(String(ip)).digest('hex').substring(0, 16);
-
-    prisma.listing
-      .update({
-        where: { id: listing.id },
-        data: { viewCount: { increment: 1 } },
-      })
-      .catch((e) => console.warn('Failed to increment viewCount:', e));
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
 
     prisma.impressionEvent
-      .create({
-        data: {
+      .findFirst({
+        where: {
           listingId: listing.id,
           ipHash,
+          createdAt: { gte: fifteenMinsAgo },
         },
+      })
+      .then((recentImp) => {
+        if (!recentImp) {
+          prisma.listing
+            .update({
+              where: { id: listing.id },
+              data: { viewCount: { increment: 1 } },
+            })
+            .catch(() => {});
+
+          prisma.impressionEvent
+            .create({
+              data: {
+                listingId: listing.id,
+                ipHash,
+              },
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {});
 
@@ -225,8 +301,8 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
-// POST /api/companies/:id/click - Track outbound website visit
-router.post('/:id/click', async (req: Request, res: Response, next: NextFunction) => {
+// POST /api/companies/:id/click - Track outbound website visit (with deduplication & rate limiting)
+router.post('/:id/click', clickLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
 
@@ -244,6 +320,24 @@ router.post('/:id/click', async (req: Request, res: Response, next: NextFunction
     const ipHash = crypto.createHash('sha256').update(String(ip)).digest('hex').substring(0, 16);
     const referrer = (req.headers.referer as string) || null;
     const userAgent = (req.headers['user-agent'] as string) || null;
+
+    // Deduplication: check if this IP recorded a click on this listing in the past 10 minutes
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const recentClick = await prisma.clickEvent.findFirst({
+      where: {
+        listingId: listing.id,
+        ipHash,
+        createdAt: { gte: tenMinutesAgo },
+      },
+    });
+
+    if (recentClick) {
+      return res.json({
+        success: true,
+        message: 'Click deduplicated',
+        deduplicated: true,
+      });
+    }
 
     // Increment clickCount atomically & record click event
     await prisma.$transaction([
@@ -308,7 +402,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
     const dataToUpdate: Record<string, any> = {};
     for (const key of allowedUpdates) {
       if (req.body[key] !== undefined) {
-        dataToUpdate[key] = req.body[key];
+        if (key === 'websiteUrl' || key === 'twitterUrl' || key === 'linkedinUrl' || key === 'githubUrl') {
+          dataToUpdate[key] = req.body[key] ? normalizeUrl(req.body[key]) : null;
+        } else {
+          dataToUpdate[key] = req.body[key];
+        }
       }
     }
 

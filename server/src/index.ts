@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
+import { apiLimiter } from './middleware/rateLimiter';
 
 // Route imports
 import authRoutes from './routes/auth';
@@ -48,6 +49,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Mount Routes
+app.use('/api', apiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/leaderboards', leaderboardRoutes);

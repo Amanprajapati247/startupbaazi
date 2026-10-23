@@ -49,8 +49,8 @@ export class RankingService {
       ],
     });
 
-    // De-duplicate in case a listing has multiple bids: keep the highest
-    const listingHighestBidMap = new Map<string, { listingId: string; amount: number; bidId: string }>();
+    // De-duplicate in case a listing has multiple bids: keep the highest and record earliest bid timestamp
+    const listingHighestBidMap = new Map<string, { listingId: string; amount: number; bidId: string; createdAt: Date }>();
 
     for (const b of activeBids) {
       if (!listingHighestBidMap.has(b.listingId)) {
@@ -58,14 +58,20 @@ export class RankingService {
           listingId: b.listingId,
           amount: b.amount,
           bidId: b.id,
+          createdAt: b.createdAt,
         });
       }
     }
 
-    // Convert map to sorted list
-    const sortedRankedListings = Array.from(listingHighestBidMap.values()).sort(
-      (a, b) => b.amount - a.amount
-    );
+    // Convert map to sorted list with strict deterministic tie-breaker:
+    // 1. Highest active bid amount in INR
+    // 2. Earliest timestamp of the winning bid (first-to-bid priority)
+    const sortedRankedListings = Array.from(listingHighestBidMap.values()).sort((a, b) => {
+      if (b.amount !== a.amount) {
+        return b.amount - a.amount;
+      }
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
 
     // 3. Update the rank and currentBidAmount for each ranked listing
     let rank = 1;

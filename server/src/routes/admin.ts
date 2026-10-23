@@ -52,10 +52,15 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
-// GET /api/admin/listings - All listings with filtering
+// GET /api/admin/listings - All listings with filtering and pagination
 router.get('/listings', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { status, search } = req.query as { status?: string; search?: string };
+    const { status, search, page: pageQuery, limit: limitQuery } = req.query as {
+      status?: string;
+      search?: string;
+      page?: string;
+      limit?: string;
+    };
 
     const where: any = {};
     if (status && status !== 'ALL') {
@@ -67,31 +72,48 @@ router.get('/listings', async (req: Request, res: Response, next: NextFunction) 
       };
     }
 
-    const listings = await prisma.listing.findMany({
-      where,
-      include: {
-        company: {
-          include: {
-            members: {
-              include: {
-                user: {
-                  select: { id: true, name: true, email: true },
+    const page = pageQuery ? Math.max(1, parseInt(pageQuery, 10)) : 1;
+    const limit = limitQuery ? Math.max(1, parseInt(limitQuery, 10)) : 20;
+    const skip = (page - 1) * limit;
+
+    const [total, listings] = await Promise.all([
+      prisma.listing.count({ where }),
+      prisma.listing.findMany({
+        where,
+        include: {
+          company: {
+            include: {
+              members: {
+                include: {
+                  user: {
+                    select: { id: true, name: true, email: true },
+                  },
                 },
               },
             },
           },
+          bids: {
+            where: { status: 'ACTIVE' },
+            take: 1,
+          },
         },
-        bids: {
-          where: { status: 'ACTIVE' },
-          take: 1,
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
 
     return res.json({
       success: true,
-      data: { listings },
+      data: {
+        listings,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+        },
+      },
     });
   } catch (err) {
     next(err);
@@ -210,30 +232,280 @@ router.patch('/listings/:id/verify', async (req: Request, res: Response, next: N
   }
 });
 
-// GET /api/admin/payments - All financial transactions
-router.get('/payments', async (_req: Request, res: Response, next: NextFunction) => {
+// GET /api/admin/payments - All financial transactions with filtering and pagination
+router.get('/payments', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const payments = await prisma.payment.findMany({
-      include: {
-        user: { select: { name: true, email: true } },
-        bid: {
-          include: {
-            leaderboard: { select: { name: true } },
-            listing: {
-              include: {
-                company: { select: { name: true, slug: true } },
+    const { status, search, page: pageQuery, limit: limitQuery } = req.query as {
+      status?: string;
+      search?: string;
+      page?: string;
+      limit?: string;
+    };
+
+    const where: any = {};
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+    if (search && search.trim().length > 0) {
+      const term = search.trim();
+      where.OR = [
+        { razorpayOrderId: { contains: term } },
+        { razorpayPaymentId: { contains: term } },
+        { stripeSessionId: { contains: term } },
+        { upiUtr: { contains: term } },
+        { user: { email: { contains: term } } },
+        { user: { name: { contains: term } } },
+      ];
+    }
+
+    const page = pageQuery ? Math.max(1, parseInt(pageQuery, 10)) : 1;
+    const limit = limitQuery ? Math.max(1, parseInt(limitQuery, 10)) : 20;
+    const skip = (page - 1) * limit;
+
+    const [total, payments] = await Promise.all([
+      prisma.payment.count({ where }),
+      prisma.payment.findMany({
+        where,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          bid: {
+            include: {
+              leaderboard: { select: { id: true, name: true } },
+              listing: {
+                include: {
+                  company: { select: { name: true, slug: true } },
+                },
               },
             },
           },
+          refunds: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        payments,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
         },
       },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/refund - Process payment refund and recalculate ranks
+const refundSchema = z.object({
+  paymentId: z.string().min(1, 'Payment ID is required'),
+  reason: z.string().min(3, 'Reason must be at least 3 characters').optional(),
+});
+
+router.post('/refund', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { paymentId, reason } = refundSchema.parse(req.body);
+    const adminId = req.user!.userId;
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        bid: {
+          include: {
+            listing: { include: { company: true } },
+          },
+        },
+        user: true,
+      },
+    });
+
+    if (!payment) {
+      throw new AppError('Payment not found', 404);
+    }
+
+    if (payment.status === 'REFUNDED') {
+      throw new AppError('This payment has already been refunded', 400);
+    }
+
+    // Process refund inside transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Mark payment as REFUNDED
+      const updatedPayment = await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'REFUNDED',
+          metadata: JSON.stringify({
+            refundedAt: new Date().toISOString(),
+            refundReason: reason || 'Admin-initiated refund',
+            refundedByAdminId: adminId,
+          }),
+        },
+      });
+
+      // 2. Create Refund log
+      const refundRecord = await tx.refund.create({
+        data: {
+          paymentId: payment.id,
+          amount: payment.amount,
+          reason: reason || 'Admin-initiated refund',
+          status: 'PROCESSED',
+        },
+      });
+
+      // 3. Expire the corresponding bid if present
+      if (payment.bid) {
+        await tx.bid.update({
+          where: { id: payment.bid.id },
+          data: {
+            status: 'EXPIRED',
+          },
+        });
+      }
+
+      return { updatedPayment, refundRecord };
+    });
+
+    // 4. If the bid was associated with an active leaderboard, recalculate ranks
+    if (payment.bid?.leaderboardId) {
+      await RankingService.recalculateRanks(payment.bid.leaderboardId);
+    }
+
+    // 5. Send notification to the user
+    await NotificationService.createNotification({
+      userId: payment.userId,
+      title: 'Payment Refunded',
+      message: `Your payment of ₹${payment.amount.toLocaleString('en-IN')} for ${
+        payment.bid?.listing?.company?.name || 'startup listing'
+      } has been refunded. Reason: ${reason || 'Admin decision'}.`,
+      type: 'SYSTEM',
+    });
+
+    // 6. Admin audit log
+    await AuditService.logAction({
+      adminId,
+      action: 'REFUND_PAYMENT',
+      targetType: 'PAYMENT',
+      targetId: payment.id,
+      details: {
+        amount: payment.amount,
+        reason: reason || 'Admin refund',
+        bidId: payment.bidId,
+        companyName: payment.bid?.listing?.company?.name,
+      },
     });
 
     return res.json({
       success: true,
-      data: { payments },
+      message: `Payment of ₹${payment.amount} refunded successfully and leaderboard rankings updated.`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/suspicious-bids - Detect unusual, anomalous, or burst bids
+router.get('/suspicious-bids', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const recentBids = await prisma.bid.findMany({
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        listing: { include: { company: { select: { id: true, name: true, slug: true } } } },
+        payment: { select: { status: true, provider: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    // Calculate baseline active bid metrics
+    const activeAmounts = recentBids.filter((b) => b.status === 'ACTIVE').map((b) => b.amount);
+    const avgAmount = activeAmounts.length > 0
+      ? activeAmounts.reduce((a, b) => a + b, 0) / activeAmounts.length
+      : 1000;
+
+    const suspiciousBids: any[] = [];
+
+    // Check 1: High outlier bids (> 5x average active amount or >= ₹25,000)
+    for (const bid of recentBids) {
+      if (bid.amount >= 25000 || (bid.amount > 5 * avgAmount && avgAmount > 500)) {
+        suspiciousBids.push({
+          bidId: bid.id,
+          companyName: bid.listing?.company?.name || 'Unknown',
+          userEmail: bid.user?.email,
+          amount: bid.amount,
+          status: bid.status,
+          createdAt: bid.createdAt,
+          reason: `High outlier bid: ₹${bid.amount.toLocaleString('en-IN')} (Average active bid: ₹${Math.round(avgAmount).toLocaleString('en-IN')})`,
+          severity: bid.amount >= 50000 ? 'HIGH' : 'MEDIUM',
+        });
+      }
+    }
+
+    // Check 2: Rapid successive bids (>= 3 bids by the same company within 15 minutes)
+    const companyBidsMap = new Map<string, typeof recentBids>();
+    for (const bid of recentBids) {
+      const compId = bid.listing?.company?.id;
+      if (!compId) continue;
+      if (!companyBidsMap.has(compId)) companyBidsMap.set(compId, []);
+      companyBidsMap.get(compId)!.push(bid);
+    }
+
+    for (const [compId, bids] of companyBidsMap.entries()) {
+      if (bids.length >= 3) {
+        // Sort ascending by time
+        const sorted = [...bids].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        for (let i = 0; i < sorted.length - 2; i++) {
+          const diffMinutes = (new Date(sorted[i + 2].createdAt).getTime() - new Date(sorted[i].createdAt).getTime()) / (1000 * 60);
+          if (diffMinutes <= 15) {
+            suspiciousBids.push({
+              bidId: sorted[i + 2].id,
+              companyName: sorted[i + 2].listing?.company?.name || compId,
+              userEmail: sorted[i + 2].user?.email,
+              amount: sorted[i + 2].amount,
+              status: sorted[i + 2].status,
+              createdAt: sorted[i + 2].createdAt,
+              reason: `Rapid burst: 3+ bids submitted within ${Math.round(diffMinutes)} minutes`,
+              severity: 'MEDIUM',
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    // Check 3: Data discrepancy (Active bid with failed or unconfirmed payment)
+    for (const bid of recentBids) {
+      if (bid.status === 'ACTIVE' && (!bid.payment || bid.payment.status !== 'SUCCESS')) {
+        suspiciousBids.push({
+          bidId: bid.id,
+          companyName: bid.listing?.company?.name || 'Unknown',
+          userEmail: bid.user?.email,
+          amount: bid.amount,
+          status: bid.status,
+          createdAt: bid.createdAt,
+          reason: `Integrity alert: Bid is ACTIVE but payment state is ${bid.payment?.status || 'MISSING'}`,
+          severity: 'HIGH',
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        suspiciousBids,
+        summary: {
+          totalChecked: recentBids.length,
+          flaggedCount: suspiciousBids.length,
+          avgActiveBid: Math.round(avgAmount),
+        },
+      },
     });
   } catch (err) {
     next(err);

@@ -6,6 +6,7 @@ import { prisma } from '../prisma';
 import { config } from '../config';
 import { authenticate } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { loginLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -74,7 +75,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
 });
 
 // POST /api/auth/login
-router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', loginLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = loginSchema.parse(req.body);
 
@@ -147,6 +148,27 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
 
     return res.json({
       success: true,
+      data: { user },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/verify-email
+router.post('/verify-email', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.userId;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { isEmailVerified: true },
+      select: { id: true, email: true, isEmailVerified: true },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Email verified successfully!',
       data: { user },
     });
   } catch (err) {
