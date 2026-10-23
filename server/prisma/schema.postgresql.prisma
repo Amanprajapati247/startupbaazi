@@ -1,0 +1,273 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                String            @id @default(uuid())
+  email             String            @unique
+  passwordHash      String
+  name              String
+  role              String            @default("USER") // ADMIN, FOUNDER, USER
+  isEmailVerified   Boolean           @default(false)
+  verificationToken String?
+  avatarUrl         String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  companyMembers    CompanyMember[]
+  bids              Bid[]
+  payments          Payment[]
+  notifications     Notification[]
+  auditLogs         AdminAuditLog[]
+}
+
+model Company {
+  id              String            @id @default(uuid())
+  name            String
+  slug            String            @unique
+  tagline         String
+  description     String
+  logoUrl         String?
+  websiteUrl      String
+  industry        String
+  categoryId      String?
+  category        Category?         @relation(fields: [categoryId], references: [id])
+  hqCity          String
+  hqState         String
+  foundedYear     Int
+  stage           String            @default("Seed")
+  cin             String?
+  gstin           String?
+  twitterUrl      String?
+  linkedinUrl     String?
+  githubUrl       String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  members         CompanyMember[]
+  listings        Listing[]
+  verifications   VerificationRequest[]
+
+  @@index([slug])
+  @@index([hqCity])
+  @@index([industry])
+}
+
+model CompanyMember {
+  id        String   @id @default(uuid())
+  companyId String
+  userId    String
+  role      String   @default("OWNER")
+  createdAt DateTime @default(now())
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  icon        String?
+  createdAt   DateTime  @default(now())
+
+  companies   Company[]
+}
+
+model Listing {
+  id               String               @id @default(uuid())
+  companyId        String
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  status           String               @default("PENDING_APPROVAL")
+  rejectionReason  String?
+  isVerified       Boolean              @default(false)
+  verifiedAt       DateTime?
+  currentRank      Int?
+  currentBidAmount Float                @default(0)
+  viewCount        Int                  @default(0)
+  clickCount       Int                  @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  bids             Bid[]
+  clickEvents      ClickEvent[]
+  impressionEvents ImpressionEvent[]
+  campaigns        Campaign[]
+
+  @@index([status])
+  @@index([currentRank])
+  @@index([currentBidAmount])
+}
+
+model Leaderboard {
+  id              String   @id @default(uuid())
+  name            String
+  slug            String   @unique
+  description     String?
+  minBidAmount    Float    @default(500)
+  minBidIncrement Float    @default(100)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bids            Bid[]
+}
+
+model Bid {
+  id            String       @id @default(uuid())
+  listingId     String
+  listing       Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  leaderboardId String
+  leaderboard   Leaderboard  @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  amount        Float
+  status        String       @default("PENDING_PAYMENT")
+  outbidAt      DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  payment       Payment?
+
+  @@index([listingId])
+  @@index([leaderboardId])
+  @@index([status])
+  @@index([amount])
+}
+
+model Payment {
+  id                String    @id @default(uuid())
+  bidId             String    @unique
+  bid               Bid       @relation(fields: [bidId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  razorpayOrderId   String    @unique
+  razorpayPaymentId String?   @unique
+  razorpaySignature String?
+  amount            Float
+  currency          String    @default("INR")
+  status            String    @default("CREATED")
+  metadata          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  refunds           Refund[]
+
+  @@index([razorpayOrderId])
+  @@index([status])
+}
+
+model PaymentWebhookEvent {
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  eventType   String
+  payload     String
+  isProcessed Boolean  @default(false)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([eventId])
+}
+
+model Campaign {
+  id          String    @id @default(uuid())
+  listingId   String
+  listing     Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  name        String
+  startDate   DateTime  @default(now())
+  endDate     DateTime?
+  totalBudget Float     @default(0)
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ClickEvent {
+  id        String   @id @default(uuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  ipHash    String?
+  referrer  String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([listingId])
+  @@index([createdAt])
+}
+
+model ImpressionEvent {
+  id        String   @id @default(uuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  @@index([listingId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("SYSTEM")
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model VerificationRequest {
+  id           String    @id @default(uuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  status       String    @default("PENDING")
+  documentsUrl String?
+  notes        String?
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  targetType String
+  targetId   String
+  details    String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([action])
+}
+
+model Refund {
+  id               String   @id @default(uuid())
+  paymentId        String
+  payment          Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  amount           Float
+  reason           String?
+  razorpayRefundId String?  @unique
+  status           String   @default("PENDING")
+  createdAt        DateTime @default(now())
+
+  @@index([paymentId])
+}
