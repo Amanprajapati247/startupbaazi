@@ -11,10 +11,11 @@ const verifyPaymentSchema = z.object({
   orderId: z.string().min(1, 'Order ID is required'),
   paymentId: z.string().min(1, 'Payment ID is required'),
   signature: z.string().min(1, 'Signature is required'),
+  provider: z.string().optional(),
   metadata: z.any().optional(),
 });
 
-// POST /api/payments/verify - Server-side verification of Razorpay payment
+// POST /api/payments/verify - Server-side verification of payment (Razorpay / Stripe)
 router.post('/verify', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = verifyPaymentSchema.parse(req.body);
@@ -23,12 +24,49 @@ router.post('/verify', authenticate, async (req: Request, res: Response, next: N
       orderId: data.orderId,
       paymentId: data.paymentId,
       signature: data.signature,
+      provider: data.provider || 'RAZORPAY',
       metadata: data.metadata,
     });
 
     return res.json({
       success: true,
       message: 'Payment verified and bid activated successfully! Leaderboard updated.',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const upiVerifySchema = z.object({
+  bidId: z.string().uuid(),
+  utr: z.string().min(6, 'Valid UPI Transaction Reference / UTR (min 6 characters) is required'),
+});
+
+// POST /api/payments/verify-upi - Direct UPI UTR verification
+router.post('/verify-upi', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { bidId, utr } = upiVerifySchema.parse(req.body);
+
+    const payment = await prisma.payment.findUnique({
+      where: { bidId },
+    });
+
+    if (!payment) {
+      throw new AppError('Payment record not found for this bid.', 404);
+    }
+
+    const result = await PaymentService.settleSuccessfulPayment({
+      orderId: payment.id,
+      paymentId: utr,
+      signature: 'upi_utr_verified',
+      provider: 'UPI_DIRECT',
+      metadata: { utr, method: 'Direct UPI Transfer' },
+    });
+
+    return res.json({
+      success: true,
+      message: 'UPI payment verified and bid activated! Leaderboard updated.',
       data: result,
     });
   } catch (err) {

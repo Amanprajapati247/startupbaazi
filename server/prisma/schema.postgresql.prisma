@@ -144,24 +144,29 @@ model Bid {
 }
 
 model Payment {
-  id                String    @id @default(uuid())
-  bidId             String    @unique
-  bid               Bid       @relation(fields: [bidId], references: [id], onDelete: Cascade)
-  userId            String
-  user              User      @relation(fields: [userId], references: [id])
-  razorpayOrderId   String    @unique
-  razorpayPaymentId String?   @unique
-  razorpaySignature String?
-  amount            Float
-  currency          String    @default("INR")
-  status            String    @default("CREATED")
-  metadata          String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                    String    @id @default(uuid())
+  bidId                 String    @unique
+  bid                   Bid       @relation(fields: [bidId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id])
+  provider              String    @default("RAZORPAY")
+  razorpayOrderId       String?   @unique
+  razorpayPaymentId     String?   @unique
+  razorpaySignature     String?
+  stripeSessionId       String?   @unique
+  stripePaymentIntentId String?   @unique
+  upiUtr                String?   @unique
+  amount                Float
+  currency              String    @default("INR")
+  status                String    @default("CREATED")
+  metadata              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  refunds           Refund[]
+  refunds               Refund[]
 
   @@index([razorpayOrderId])
+  @@index([stripeSessionId])
   @@index([status])
 }
 

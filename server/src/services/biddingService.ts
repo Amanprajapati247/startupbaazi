@@ -6,19 +6,20 @@ import { config } from '../config';
 
 export class BiddingService {
   /**
-   * Creates a bid intent and Razorpay payment order.
-   * Performs server-side validation against current leaderboard minimums.
+   * Creates a bid intent and payment order across Razorpay, Stripe, or Direct UPI.
    */
   static async createBidIntent({
     listingId,
     leaderboardId,
     userId,
     amount,
+    provider = 'RAZORPAY',
   }: {
     listingId: string;
     leaderboardId: string;
     userId: string;
     amount: number;
+    provider?: 'RAZORPAY' | 'STRIPE' | 'UPI_DIRECT';
   }) {
     // 1. Verify listing is APPROVED
     const listing = await prisma.listing.findUnique({
@@ -66,7 +67,6 @@ export class BiddingService {
       );
     }
 
-    // If currently holding a bid, ensure the new bid is higher than their own existing bid!
     if (listing.currentBidAmount > 0 && amount <= listing.currentBidAmount) {
       throw new AppError(
         `Your new bid (₹${amount}) must be greater than your current active bid of ₹${listing.currentBidAmount.toLocaleString('en-IN')}.`,
@@ -74,20 +74,34 @@ export class BiddingService {
       );
     }
 
-    // 5. Create Razorpay order
-    const receipt = `bid_${Date.now()}_${listingId.substring(0, 6)}`;
-    const order = await PaymentService.createOrder({
-      amountInINR: amount,
-      receipt,
-      notes: {
-        listingId,
-        companyName: listing.company.name,
-        leaderboardId,
-        userId,
-      },
-    });
+    // 5. Initialize provider-specific order
+    let razorpayOrder: any = null;
+    let stripeSession: any = null;
+    let upiDetails: any = null;
 
-    // 6. Record Bid and Payment in database
+    if (provider === 'STRIPE') {
+      stripeSession = await PaymentService.createStripeSession({
+        amountInINR: amount,
+        companyName: listing.company.name,
+        successUrl: `${config.clientUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${config.clientUrl}/dashboard?payment=cancelled`,
+        metadata: { listingId, leaderboardId, userId },
+      });
+    } else {
+      const receipt = `bid_${Date.now()}_${listingId.substring(0, 6)}`;
+      razorpayOrder = await PaymentService.createOrder({
+        amountInINR: amount,
+        receipt,
+        notes: {
+          listingId,
+          companyName: listing.company.name,
+          leaderboardId,
+          userId,
+        },
+      });
+    }
+
+    // 6. Record Bid and Payment atomically
     const { bid, payment } = await prisma.$transaction(async (tx) => {
       const newBid = await tx.bid.create({
         data: {
@@ -103,14 +117,17 @@ export class BiddingService {
         data: {
           bidId: newBid.id,
           userId,
-          razorpayOrderId: order.id,
+          provider,
+          razorpayOrderId: razorpayOrder ? razorpayOrder.id : undefined,
+          stripeSessionId: stripeSession ? stripeSession.id : undefined,
           amount,
           currency: 'INR',
           status: 'CREATED',
           metadata: JSON.stringify({
             companyName: listing.company.name,
             leaderboardName: leaderboard.name,
-            isTestMode: order.isTestMode,
+            provider,
+            isTestMode: razorpayOrder?.isTestMode ?? stripeSession?.isTestMode ?? true,
           }),
         },
       });
@@ -118,16 +135,28 @@ export class BiddingService {
       return { bid: newBid, payment: newPayment };
     });
 
+    if (provider === 'UPI_DIRECT') {
+      upiDetails = PaymentService.getUpiPaymentDetails({
+        amountInINR: amount,
+        companyName: listing.company.name,
+        bidId: bid.id,
+      });
+    }
+
     return {
       bidId: bid.id,
       paymentId: payment.id,
-      orderId: order.id,
+      orderId: razorpayOrder?.id || stripeSession?.id || payment.id,
       amountInINR: amount,
-      amountInPaise: order.amount,
-      currency: order.currency,
+      amountInPaise: Math.round(amount * 100),
+      currency: 'INR',
       keyId: config.razorpayKeyId,
+      stripePublishableKey: config.stripePublishableKey,
+      stripeSessionUrl: stripeSession?.url,
+      upiDetails,
+      provider,
       companyName: listing.company.name,
-      isTestMode: order.isTestMode,
+      isTestMode: razorpayOrder?.isTestMode ?? stripeSession?.isTestMode ?? true,
     };
   }
 
@@ -141,7 +170,10 @@ export class BiddingService {
         payment: {
           select: {
             status: true,
+            provider: true,
             razorpayPaymentId: true,
+            stripePaymentIntentId: true,
+            upiUtr: true,
             createdAt: true,
           },
         },

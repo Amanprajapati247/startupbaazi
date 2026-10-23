@@ -11,6 +11,11 @@ export const config = {
   razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret',
   razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'placeholder_webhook_secret',
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
+  stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  upiVpa: process.env.UPI_VPA || 'startupbaazi@upi',
+  upiMerchantName: process.env.UPI_MERCHANT_NAME || 'StartupBaazi Technologies',
   defaultMinBid: parseFloat(process.env.DEFAULT_MIN_BID_AMOUNT || '500'),
   defaultMinIncrement: parseFloat(process.env.DEFAULT_MIN_BID_INCREMENT || '100'),
 };

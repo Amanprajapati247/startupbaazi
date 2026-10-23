@@ -10,9 +10,10 @@ const bidIntentSchema = z.object({
   listingId: z.string().uuid('Valid listing ID required'),
   leaderboardId: z.string().uuid('Valid leaderboard ID required'),
   amount: z.number().positive('Bid amount must be a positive number'),
+  provider: z.enum(['RAZORPAY', 'STRIPE', 'UPI_DIRECT']).default('RAZORPAY').optional(),
 });
 
-// POST /api/bids/intent - Create a bid intent and Razorpay payment order
+// POST /api/bids/intent - Create a bid intent and payment order
 router.post('/intent', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = bidIntentSchema.parse(req.body);
@@ -23,6 +24,7 @@ router.post('/intent', authenticate, async (req: Request, res: Response, next: N
       leaderboardId: data.leaderboardId,
       userId,
       amount: data.amount,
+      provider: data.provider || 'RAZORPAY',
     });
 
     return res.status(201).json({

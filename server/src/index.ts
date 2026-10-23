@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import path from 'path';
+import fs from 'fs';
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -19,6 +21,7 @@ const app = express();
 // Security & Utility Middleware
 app.use(helmet({
   crossOriginResourcePolicy: false,
+  contentSecurityPolicy: false, // Allows Razorpay and Stripe checkout overlays
 }));
 app.use(cors({
   origin: '*', // Allow all origins for dev / flexible deployment
@@ -26,7 +29,7 @@ app.use(cors({
 }));
 app.use(morgan('dev'));
 
-// Razorpay webhook raw body capture (for HMAC signature)
+// Webhook raw body capture (for HMAC signature)
 app.use(express.json({
   verify: (req: any, _res, buf) => {
     req.rawBody = buf.toString();
@@ -52,6 +55,29 @@ app.use('/api/bids', bidRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
+
+// Serve client in production if built
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+const altClientDistPath = path.resolve(process.cwd(), '../client/dist');
+const localDistPath = path.resolve(process.cwd(), 'client/dist');
+
+const staticPath = fs.existsSync(clientDistPath)
+  ? clientDistPath
+  : fs.existsSync(altClientDistPath)
+  ? altClientDistPath
+  : fs.existsSync(localDistPath)
+  ? localDistPath
+  : null;
+
+if (staticPath) {
+  app.use(express.static(staticPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(staticPath, 'index.html'));
+  });
+}
 
 // Global Error Handler
 app.use(errorHandler);

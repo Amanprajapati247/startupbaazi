@@ -1,4 +1,6 @@
-const API_BASE = '/api';
+const API_BASE = (import.meta as any).env?.VITE_API_URL
+  ? `${(import.meta as any).env.VITE_API_URL.replace(/\/$/, '')}/api`
+  : '/api';
 
 export class ApiError extends Error {
   errors?: Array<{ path: string; message: string }>;
@@ -57,10 +59,12 @@ export const api = {
   getBidRequirements: (slug: string, rank: number = 1) => request<any>(`/leaderboards/${slug}/requirements?rank=${rank}`),
 
   // Bids & Payments
-  createBidIntent: (payload: { listingId: string; leaderboardId: string; amount: number }) =>
+  createBidIntent: (payload: { listingId: string; leaderboardId: string; amount: number; provider?: 'RAZORPAY' | 'STRIPE' | 'UPI_DIRECT' }) =>
     request<any>('/bids/intent', { method: 'POST', body: JSON.stringify(payload) }),
-  verifyPayment: (payload: { orderId: string; paymentId: string; signature: string; metadata?: any }) =>
+  verifyPayment: (payload: { orderId: string; paymentId: string; signature: string; provider?: string; metadata?: any }) =>
     request<any>('/payments/verify', { method: 'POST', body: JSON.stringify(payload) }),
+  verifyUpiPayment: (payload: { bidId: string; utr: string }) =>
+    request<any>('/payments/verify-upi', { method: 'POST', body: JSON.stringify(payload) }),
   getBidHistory: (listingId: string) => request<any>(`/bids/history/${listingId}`),
   getMyPayments: () => request<any>('/payments/my-history'),
 
