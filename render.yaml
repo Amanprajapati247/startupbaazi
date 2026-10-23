@@ -3,8 +3,8 @@ services:
     name: startupbaazi
     env: node
     plan: starter
-    buildCommand: npm install && npm run build && cd server && npx prisma generate && npx prisma db push
-    startCommand: cd server && npm start
+    buildCommand: npm install && npm run build && npm run db:prepare
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
