@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Flame, Lock, Mail, ArrowRight, Shield, Zap, Eye, EyeOff } from 'lucide-react';
+import { Flame, Lock, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -40,11 +40,6 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleQuickLogin = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-  };
-
   return (
     <div className="max-w-md mx-auto px-4 py-16 sm:py-24 space-y-8">
       {/* Brand Icon & Heading */}
@@ -58,31 +53,6 @@ export const LoginPage: React.FC = () => {
         <p className="text-xs text-slate-400">
           Manage your startup listings, place visibility bids, and review real traffic.
         </p>
-      </div>
-
-      {/* Quick Demo Fillers */}
-      <div className="bg-navy-900/60 border border-slate-800 rounded-2xl p-3.5 space-y-2">
-        <span className="text-[11px] font-semibold text-slate-400 block flex items-center gap-1">
-          <Zap className="w-3.5 h-3.5 text-amber-400" />
-          <span>Quick Developer / Demo Credentials:</span>
-        </span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('founder@startupbaazi.demo', 'Founder@12345')}
-            className="flex-1 py-1.5 px-2 rounded-xl bg-navy-950 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700/60 transition-all text-center"
-          >
-            🧑‍💻 Demo Founder
-          </button>
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('admin@startupbaazi.in', 'Admin@12345')}
-            className="flex-1 py-1.5 px-2 rounded-xl bg-navy-950 hover:bg-slate-800 text-amber-300 text-xs font-medium border border-amber-500/30 transition-all text-center flex items-center justify-center gap-1"
-          >
-            <Shield className="w-3 h-3 text-amber-400" />
-            <span>Admin</span>
-          </button>
-        </div>
       </div>
 
       {/* Login Card */}
