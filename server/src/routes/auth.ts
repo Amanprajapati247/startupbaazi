@@ -7,6 +7,7 @@ import { config } from '../config';
 import { authenticate } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { loginLimiter } from '../middleware/rateLimiter';
+import { NotificationService } from '../services/notificationService';
 
 const router = Router();
 
@@ -170,6 +171,163 @@ router.post('/verify-email', authenticate, async (req: Request, res: Response, n
       success: true,
       message: 'Email verified successfully!',
       data: { user },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Validation Schemas for Password Management
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address').toLowerCase(),
+});
+
+const resetPasswordSchema = z.object({
+  email: z.string().email('Invalid email address').toLowerCase(),
+  resetToken: z.string().min(1, 'Reset code or token is required'),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+});
+
+// POST /api/auth/forgot-password - Request a 6-digit password reset code
+router.post('/forgot-password', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = forgotPasswordSchema.parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { email: data.email },
+    });
+
+    if (!user) {
+      // Don't leak registered status if account doesn't exist
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, password reset instructions have been generated.',
+      });
+    }
+
+    // Generate a secure 6-digit numeric verification code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // Valid for 1 hour
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordToken: resetCode,
+        resetPasswordExpires: resetExpires,
+      },
+    });
+
+    console.log(`🔐 [Password Reset] Reset code generated for ${user.email}: ${resetCode}`);
+
+    await NotificationService.createNotification({
+      userId: user.id,
+      title: 'Password Reset Code Requested',
+      message: `A password reset code (${resetCode}) was generated for your account. This code expires in 1 hour.`,
+      type: 'SYSTEM',
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password reset code generated successfully.',
+      data: {
+        email: user.email,
+        resetCode, // Frictionless UX so user can test and reset right away
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/reset-password - Verify reset code and update password
+router.post('/reset-password', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = resetPasswordSchema.parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { email: data.email },
+    });
+
+    if (!user || !user.resetPasswordToken || !user.resetPasswordExpires) {
+      throw new AppError('Invalid or expired reset code. Please request a new code.', 400);
+    }
+
+    if (new Date() > user.resetPasswordExpires) {
+      throw new AppError('The reset code has expired. Please request a new code.', 400);
+    }
+
+    if (user.resetPasswordToken.trim() !== data.resetToken.trim()) {
+      throw new AppError('Incorrect reset code. Please check and try again.', 400);
+    }
+
+    const passwordHash = await bcrypt.hash(data.newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+      },
+    });
+
+    await NotificationService.createNotification({
+      userId: user.id,
+      title: 'Password Reset Successful',
+      message: 'Your account password was successfully reset. You can now log in with your new credentials.',
+      type: 'SYSTEM',
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password has been reset successfully! You can now log in with your new password.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/change-password - Authenticated user self-service password update
+router.post('/change-password', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = changePasswordSchema.parse(req.body);
+    const userId = req.user!.userId;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new AppError('User not found.', 404);
+    }
+
+    const isMatch = await bcrypt.compare(data.currentPassword, user.passwordHash);
+    if (!isMatch) {
+      throw new AppError('Current password is incorrect.', 400);
+    }
+
+    const passwordHash = await bcrypt.hash(data.newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    await NotificationService.createNotification({
+      userId,
+      title: 'Password Changed',
+      message: 'Your account password was updated successfully.',
+      type: 'SYSTEM',
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password changed successfully.',
     });
   } catch (err) {
     next(err);

@@ -16,7 +16,13 @@ import {
   ExternalLink,
   RotateCcw,
   AlertOctagon,
-  X
+  X,
+  Key,
+  Lock,
+  Eye,
+  EyeOff,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { StatCard } from '../components/StatCard';
@@ -48,12 +54,35 @@ export const AdminDashboardPage: React.FC = () => {
   const [suspiciousBids, setSuspiciousBids] = useState<any[]>([]);
   const [suspiciousSummary, setSuspiciousSummary] = useState<any>(null);
 
-  const [activeTab, setActiveTab] = useState<'moderation' | 'rules' | 'payments' | 'suspicious' | 'audit'>('moderation');
+  const [activeTab, setActiveTab] = useState<'moderation' | 'users' | 'rules' | 'payments' | 'suspicious' | 'audit'>('moderation');
   const [statusFilter, setStatusFilter] = useState<string>('PENDING_APPROVAL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('ALL');
   const [paymentSearch, setPaymentSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // User Management State
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [userSearch, setUserSearch] = useState<string>('');
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
+  const [isUsersLoading, setIsUsersLoading] = useState<boolean>(false);
+
+  // Admin Change Password Modal State
+  const [userPasswordModal, setUserPasswordModal] = useState<{
+    isOpen: boolean;
+    user: { id: string; name: string; email: string } | null;
+    newPassword: string;
+    confirmPassword: string;
+    showPassword: boolean;
+    isSubmitting: boolean;
+  }>({
+    isOpen: false,
+    user: null,
+    newPassword: '',
+    confirmPassword: '',
+    showPassword: false,
+    isSubmitting: false,
+  });
 
   // Leaderboard Rules Config
   const [minBidAmount, setMinBidAmount] = useState<number>(500);
@@ -118,6 +147,81 @@ export const AdminDashboardPage: React.FC = () => {
       loadAdminData();
     }
   }, [isAdmin, statusFilter, paymentStatusFilter]);
+
+  const loadUsers = async () => {
+    try {
+      setIsUsersLoading(true);
+      const res = await api.getAdminUsers(userSearch, userRoleFilter);
+      if (res.success) {
+        setUsersList(res.data.users || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load users:', err);
+    } finally {
+      setIsUsersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadUsers();
+    }
+  }, [isAdmin, userRoleFilter]);
+
+  const generateStrongPassword = () => {
+    const chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
+    let pwd = 'Sb@';
+    for (let i = 0; i < 9; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setUserPasswordModal((prev) => ({
+      ...prev,
+      newPassword: pwd,
+      confirmPassword: pwd,
+      showPassword: true,
+    }));
+    showToast('Generated strong password suggestion', 'info');
+  };
+
+  const handleAdminResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userPasswordModal.user) return;
+    if (userPasswordModal.newPassword.length < 6) {
+      showToast('Password must be at least 6 characters', 'error');
+      return;
+    }
+    if (userPasswordModal.newPassword !== userPasswordModal.confirmPassword) {
+      showToast('Passwords do not match', 'error');
+      return;
+    }
+
+    try {
+      setUserPasswordModal((prev) => ({ ...prev, isSubmitting: true }));
+      const res = await api.adminResetUserPassword(
+        userPasswordModal.user.id,
+        userPasswordModal.newPassword
+      );
+
+      if (res.success) {
+        showToast(res.message || 'Password updated successfully!', 'success');
+        setUserPasswordModal({
+          isOpen: false,
+          user: null,
+          newPassword: '',
+          confirmPassword: '',
+          showPassword: false,
+          isSubmitting: false,
+        });
+        // Reload audit logs to reflect action
+        api.getAdminAuditLogs().then((res) => {
+          if (res.success) setAuditLogs(res.data.logs || []);
+        });
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update user password', 'error');
+      setUserPasswordModal((prev) => ({ ...prev, isSubmitting: false }));
+    }
+  };
 
   const openConfirmModal = (config: Omit<ConfirmModalConfig, 'isOpen'>) => {
     setModalReasonInput(config.defaultReason || '');
@@ -320,6 +424,119 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       )}
 
+      {/* Admin Reset User Password Modal */}
+      {userPasswordModal.isOpen && userPasswordModal.user && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-navy-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+            <button
+              onClick={() => setUserPasswordModal((prev) => ({ ...prev, isOpen: false }))}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Change User Password</h3>
+                <p className="text-[11px] text-slate-400">Admin override for user credential</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-navy-950 border border-slate-800 rounded-xl space-y-1">
+              <div className="text-xs text-slate-400">Target User:</div>
+              <div className="text-sm font-bold text-white">{userPasswordModal.user.name}</div>
+              <div className="text-xs text-brand-400 font-mono">{userPasswordModal.user.email}</div>
+            </div>
+
+            <form onSubmit={handleAdminResetPassword} className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-300">New Password</label>
+                  <button
+                    type="button"
+                    onClick={generateStrongPassword}
+                    className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Generate Strong</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={userPasswordModal.showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Enter new password (min 6 chars)"
+                    value={userPasswordModal.newPassword}
+                    onChange={(e) =>
+                      setUserPasswordModal((prev) => ({ ...prev, newPassword: e.target.value }))
+                    }
+                    className="w-full pl-10 pr-10 py-2.5 bg-navy-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUserPasswordModal((prev) => ({ ...prev, showPassword: !prev.showPassword }))
+                    }
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    tabIndex={-1}
+                  >
+                    {userPasswordModal.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={userPasswordModal.showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Repeat new password"
+                    value={userPasswordModal.confirmPassword}
+                    onChange={(e) =>
+                      setUserPasswordModal((prev) => ({ ...prev, confirmPassword: e.target.value }))
+                    }
+                    className="w-full pl-10 pr-4 py-2.5 bg-navy-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setUserPasswordModal((prev) => ({ ...prev, isOpen: false }))}
+                  disabled={userPasswordModal.isSubmitting}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-navy-950 border border-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={userPasswordModal.isSubmitting || userPasswordModal.newPassword.length < 6}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 transition-all shadow-md shadow-amber-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {userPasswordModal.isSubmitting ? (
+                    'Updating...'
+                  ) : (
+                    <>
+                      <Key className="w-3.5 h-3.5" />
+                      <span>Update Password</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Admin Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
@@ -388,6 +605,18 @@ export const AdminDashboardPage: React.FC = () => {
         >
           <Building className="w-4 h-4" />
           <span>Moderation ({stats?.pendingListings || 0} Pending)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-5 py-3 border-b-2 transition-all flex items-center gap-2 flex-shrink-0 ${
+            activeTab === 'users'
+              ? 'border-brand-500 text-brand-400'
+              : 'border-transparent text-slate-400 hover:text-white'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>User Accounts & Passwords ({stats?.totalUsers || 0})</span>
         </button>
 
         <button
@@ -581,6 +810,172 @@ export const AdminDashboardPage: React.FC = () => {
                               Suspend
                             </button>
                           )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: User Accounts & Passwords */}
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+            <div className="flex gap-2">
+              {(['ALL', 'FOUNDER', 'ADMIN', 'USER'] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setUserRoleFilter(r)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    userRoleFilter === r
+                      ? 'bg-brand-500 text-white shadow-md shadow-brand-500/20'
+                      : 'bg-navy-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loadUsers()}
+                  className="w-full pl-9 pr-4 py-2 bg-navy-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <button
+                onClick={loadUsers}
+                className="p-2 bg-navy-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-xl hover:text-white transition-colors"
+                title="Refresh user list"
+              >
+                <RefreshCw className={`w-4 h-4 ${isUsersLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-navy-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-navy-950/60 text-slate-400 uppercase font-semibold">
+                    <th className="py-3.5 px-4">User</th>
+                    <th className="py-3.5 px-4">Role</th>
+                    <th className="py-3.5 px-4">Startups Associated</th>
+                    <th className="py-3.5 px-4">Activity</th>
+                    <th className="py-3.5 px-4">Joined Date</th>
+                    <th className="py-3.5 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {isUsersLoading ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                        Loading user accounts...
+                      </td>
+                    </tr>
+                  ) : usersList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-500">
+                        No user accounts match your search/filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    usersList.map((u) => (
+                      <tr key={u.id} className="hover:bg-navy-950/50 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-navy-800 border border-slate-700 flex items-center justify-center font-bold text-brand-400 text-xs flex-shrink-0">
+                              {u.avatarUrl ? (
+                                <img src={u.avatarUrl} alt={u.name} className="w-full h-full rounded-full object-cover" />
+                              ) : (
+                                u.name.charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                <span>{u.name}</span>
+                                {u.isEmailVerified && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Verified email" />
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-400 font-mono">{u.email}</div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              u.role === 'ADMIN'
+                                ? 'bg-amber-400/10 text-amber-300 border border-amber-400/30'
+                                : u.role === 'FOUNDER'
+                                ? 'bg-brand-500/10 text-brand-400 border border-brand-500/30'
+                                : 'bg-slate-700/30 text-slate-400 border border-slate-700/50'
+                            }`}
+                          >
+                            {u.role}
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          {u.companyMembers && u.companyMembers.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {u.companyMembers.map((m: any) => (
+                                <span
+                                  key={m.company.id}
+                                  className="px-2 py-0.5 rounded bg-navy-950 border border-slate-700 text-slate-300 text-[11px]"
+                                >
+                                  {m.company.name}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 italic">None</span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-slate-300">
+                          <div className="text-[11px]">
+                            <span className="text-white font-semibold">{u._count?.bids || 0}</span> bids
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            {u._count?.payments || 0} payments
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                          {new Date(u.createdAt).toLocaleDateString()}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={() =>
+                              setUserPasswordModal({
+                                isOpen: true,
+                                user: { id: u.id, name: u.name, email: u.email },
+                                newPassword: '',
+                                confirmPassword: '',
+                                showPassword: false,
+                                isSubmitting: false,
+                              })
+                            }
+                            className="px-3 py-1.5 rounded-xl bg-navy-950 border border-amber-500/40 hover:bg-amber-500/10 text-amber-300 text-xs font-semibold inline-flex items-center gap-1.5 transition-all shadow-sm"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                            <span>Change Password</span>
+                          </button>
                         </td>
                       </tr>
                     ))

@@ -539,4 +539,188 @@ describe('StartupBaazi Full Production Readiness & QA Suite (12 Core Scenarios)'
       }
     });
   });
+
+  describe('13. User and Admin Password Management Flow', () => {
+    let testUserEmail = `pwd-test-${Date.now()}@example.com`;
+    let testUserId = '';
+    let resetCode = '';
+
+    beforeAll(async () => {
+      // Create a test user
+      const registerRes = await request(app)
+        .post('/api/auth/register')
+        .send({
+          name: 'Password Test User',
+          email: testUserEmail,
+          password: 'InitialPassword@123',
+          role: 'FOUNDER',
+        });
+
+      testUserId = registerRes.body.data.user.id;
+    });
+
+    it('13A. Should generate a 6-digit reset code on forgot-password request', async () => {
+      const res = await request(app)
+        .post('/api/auth/forgot-password')
+        .send({ email: testUserEmail });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data.resetCode).toBeDefined();
+      expect(res.body.data.resetCode.length).toBe(6);
+
+      resetCode = res.body.data.resetCode;
+
+      // Verify token in database
+      const userInDb = await prisma.user.findUnique({ where: { email: testUserEmail } });
+      expect(userInDb!.resetPasswordToken).toBe(resetCode);
+      expect(userInDb!.resetPasswordExpires).toBeDefined();
+    });
+
+    it('13B. Should reject reset-password with incorrect reset code', async () => {
+      const res = await request(app)
+        .post('/api/auth/reset-password')
+        .send({
+          email: testUserEmail,
+          resetToken: '999999', // Wrong code
+          newPassword: 'BrandNewPassword@456',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('13C. Should successfully reset password with valid code and allow login with new password', async () => {
+      const res = await request(app)
+        .post('/api/auth/reset-password')
+        .send({
+          email: testUserEmail,
+          resetToken: resetCode,
+          newPassword: 'BrandNewPassword@456',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      // Verify reset token was cleared in DB
+      const userInDb = await prisma.user.findUnique({ where: { email: testUserEmail } });
+      expect(userInDb!.resetPasswordToken).toBeNull();
+      expect(userInDb!.resetPasswordExpires).toBeNull();
+
+      // Old password should fail login
+      const oldLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: testUserEmail,
+          password: 'InitialPassword@123',
+        });
+      expect(oldLoginRes.status).toBe(401);
+
+      // New password should succeed login
+      const newLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: testUserEmail,
+          password: 'BrandNewPassword@456',
+        });
+      expect(newLoginRes.status).toBe(200);
+      expect(newLoginRes.body.success).toBe(true);
+    });
+
+    it('13D. Should allow authenticated user to self-service change password', async () => {
+      // First log in to get token
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: testUserEmail,
+          password: 'BrandNewPassword@456',
+        });
+      const token = loginRes.body.data.token;
+
+      // Update password
+      const changeRes = await request(app)
+        .post('/api/auth/change-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          currentPassword: 'BrandNewPassword@456',
+          newPassword: 'SelfChangedPassword@789',
+        });
+
+      expect(changeRes.status).toBe(200);
+      expect(changeRes.body.success).toBe(true);
+
+      // Verify new login works
+      const verifyRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: testUserEmail,
+          password: 'SelfChangedPassword@789',
+        });
+      expect(verifyRes.status).toBe(200);
+    });
+
+    it('13E. Should allow Admin to view and search user accounts', async () => {
+      const res = await request(app)
+        .get('/api/admin/users?search=' + encodeURIComponent(testUserEmail))
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.users.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.data.users[0].email).toBe(testUserEmail);
+      // Ensure passwordHash is NOT leaked in response
+      expect(res.body.data.users[0].passwordHash).toBeUndefined();
+    });
+
+    it('13F. Should allow Admin to change any user password directly from Admin panel', async () => {
+      const res = await request(app)
+        .patch(`/api/admin/users/${testUserId}/password`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          newPassword: 'AdminOverriddenPassword@2026',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      // Verify that user can now log in with the admin-set password
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: testUserEmail,
+          password: 'AdminOverriddenPassword@2026',
+        });
+      expect(loginRes.status).toBe(200);
+      expect(loginRes.body.data.user.id).toBe(testUserId);
+
+      // Verify audit log exists for this admin action
+      const auditLog = await prisma.adminAuditLog.findFirst({
+        where: {
+          action: 'ADMIN_RESET_USER_PASSWORD',
+          targetId: testUserId,
+        },
+      });
+      expect(auditLog).toBeDefined();
+    });
+
+    it('13G. Should reject non-admin attempts to reset another user password', async () => {
+      const founderLogin = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: founderUser.email,
+          password: 'Founder@12345',
+        });
+      const founderToken = founderLogin.body.data.token;
+
+      const res = await request(app)
+        .patch(`/api/admin/users/${testUserId}/password`)
+        .set('Authorization', `Bearer ${founderToken}`)
+        .send({
+          newPassword: 'HackerAttempt@123',
+        });
+
+      expect(res.status).toBe(403);
+    });
+  });
 });

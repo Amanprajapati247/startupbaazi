@@ -14,6 +14,7 @@ import { UserDashboardPage } from './pages/UserDashboardPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { BiddingRulesPage } from './pages/BiddingRulesPage';
 import { TermsPage } from './pages/TermsPage';
 import { RefundPolicyPage } from './pages/RefundPolicyPage';
@@ -36,6 +37,7 @@ export const App: React.FC = () => {
                 <Route path="/admin" element={<AdminDashboardPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/bidding-rules" element={<BiddingRulesPage />} />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/refund-policy" element={<RefundPolicyPage />} />

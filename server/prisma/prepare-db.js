@@ -1,6 +1,11 @@
 const path = require('path');
 const { execSync } = require('child_process');
 
+// Load environment variables if .env exists
+try {
+  require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+} catch (e) {}
+
 let dbUrl = (process.env.DATABASE_URL || '').trim();
 
 // If DATABASE_URL is placeholder or empty, provide a fallback so prisma generate doesn't fail

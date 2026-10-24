@@ -42,6 +42,12 @@ export const api = {
   register: (payload: any) => request<any>('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
   login: (payload: any) => request<any>('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
   getMe: () => request<any>('/auth/me'),
+  forgotPassword: (payload: { email: string }) =>
+    request<any>('/auth/forgot-password', { method: 'POST', body: JSON.stringify(payload) }),
+  resetPassword: (payload: { email: string; resetToken: string; newPassword: string }) =>
+    request<any>('/auth/reset-password', { method: 'POST', body: JSON.stringify(payload) }),
+  changePassword: (payload: { currentPassword: string; newPassword: string }) =>
+    request<any>('/auth/change-password', { method: 'POST', body: JSON.stringify(payload) }),
 
   // Companies
   submitCompany: (payload: any) => request<any>('/companies', { method: 'POST', body: JSON.stringify(payload) }),
@@ -102,4 +108,14 @@ export const api = {
   getAdminAuditLogs: () => request<any>('/admin/audit-logs'),
   updateLeaderboardRules: (payload: { id: string; minBidAmount: number; minBidIncrement: number }) =>
     request<any>('/admin/leaderboard-rules', { method: 'PATCH', body: JSON.stringify(payload) }),
+  getAdminUsers: (search?: string, role?: string, page?: number, limit?: number) => {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (role) params.append('role', role);
+    if (page) params.append('page', page.toString());
+    if (limit) params.append('limit', limit.toString());
+    return request<any>(`/admin/users?${params.toString()}`);
+  },
+  adminResetUserPassword: (userId: string, newPassword: string) =>
+    request<any>(`/admin/users/${userId}/password`, { method: 'PATCH', body: JSON.stringify({ newPassword }) }),
 };

@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { authenticate, requireAdmin } from '../middleware/auth';
@@ -564,6 +565,148 @@ router.patch('/leaderboard-rules', async (req: Request, res: Response, next: Nex
       success: true,
       message: 'Leaderboard bidding rules updated',
       data: { leaderboard: updated },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/users - List & search user accounts
+router.get('/users', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { search, role, page: pageQuery, limit: limitQuery } = req.query as {
+      search?: string;
+      role?: string;
+      page?: string;
+      limit?: string;
+    };
+
+    const where: any = {};
+    if (role && role !== 'ALL') {
+      where.role = role;
+    }
+    if (search && search.trim().length > 0) {
+      const term = search.trim();
+      where.OR = [
+        { name: { contains: term } },
+        { email: { contains: term } },
+      ];
+    }
+
+    const page = pageQuery ? Math.max(1, parseInt(pageQuery, 10)) : 1;
+    const limit = limitQuery ? Math.max(1, parseInt(limitQuery, 10)) : 25;
+    const skip = (page - 1) * limit;
+
+    const [total, users] = await Promise.all([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          isEmailVerified: true,
+          avatarUrl: true,
+          createdAt: true,
+          updatedAt: true,
+          companyMembers: {
+            include: {
+              company: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  stage: true,
+                },
+              },
+            },
+          },
+          _count: {
+            select: {
+              bids: true,
+              payments: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        users,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/users/:userId/password - Admin resets any user's password
+const adminResetPasswordSchema = z.object({
+  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+router.patch('/users/:userId/password', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.params.userId as string;
+    const { newPassword } = adminResetPasswordSchema.parse(req.body);
+    const adminId = req.user!.userId;
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!targetUser) {
+      throw new AppError('User not found', 404);
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+      },
+    });
+
+    // Create Audit Log
+    await AuditService.logAction({
+      adminId,
+      action: 'ADMIN_RESET_USER_PASSWORD',
+      targetType: 'USER',
+      targetId: userId,
+      details: {
+        userEmail: targetUser.email,
+        userName: targetUser.name,
+        userRole: targetUser.role,
+        adminEmail: req.user!.email,
+      },
+    });
+
+    // Notify target user
+    await NotificationService.createNotification({
+      userId,
+      title: 'Password Updated by Administrator',
+      message: 'Your account password was updated by a platform administrator. Please log in with your new password.',
+      type: 'SYSTEM',
+    });
+
+    return res.json({
+      success: true,
+      message: `Password for ${targetUser.email} (${targetUser.name}) has been updated successfully.`,
     });
   } catch (err) {
     next(err);
