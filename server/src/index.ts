@@ -25,8 +25,21 @@ app.use(helmet({
   contentSecurityPolicy: false, // Allows Razorpay and Stripe checkout overlays
 }));
 app.use(cors({
-  origin: '*', // Allow all origins for dev / flexible deployment
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      origin === config.clientUrl ||
+      origin.endsWith('.vercel.app') ||
+      origin.includes('localhost') ||
+      config.nodeEnv !== 'production'
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature', 'stripe-signature'],
 }));
 app.use(morgan('dev'));
 
