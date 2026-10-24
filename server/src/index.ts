@@ -99,8 +99,14 @@ app.use(errorHandler);
 
 // Start Server
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(config.port, () => {
+  app.listen(config.port, async () => {
     console.log(`🚀 [StartupBaazi API] running on http://localhost:${config.port}`);
+    try {
+      const { autoSeedIfEmpty } = await import('./utils/autoSeed');
+      await autoSeedIfEmpty();
+    } catch (err: any) {
+      console.warn('⚠️ [StartupBaazi Auto-Init Notice]:', err.message);
+    }
   });
 }
 
