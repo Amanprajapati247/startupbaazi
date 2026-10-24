@@ -45,8 +45,22 @@ export const errorHandler = (
     });
   }
 
+  if (err.code === 'P2021') {
+    return res.status(500).json({
+      success: false,
+      message: `Database table not found (${err.meta?.table || 'schema'}). Database schema is being initialized. Please try again in a few moments.`,
+    });
+  }
+
+  if (err.code === 'P1001' || err.code === 'P1000') {
+    return res.status(503).json({
+      success: false,
+      message: 'Database connection failed. Please verify the DATABASE_URL in your Render Environment settings.',
+    });
+  }
+
   return res.status(500).json({
     success: false,
-    message: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message || 'Something went wrong',
+    message: err.message || 'Internal server error',
   });
 };
