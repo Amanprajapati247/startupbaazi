@@ -82,6 +82,11 @@ export const Footer: React.FC = () => {
                   Privacy Policy
                 </Link>
               </li>
+              <li>
+                <Link to="/forgot-password" className="text-amber-400/90 hover:text-amber-300 transition-colors font-medium">
+                  Forgot Password
+                </Link>
+              </li>
             </ul>
           </div>
 

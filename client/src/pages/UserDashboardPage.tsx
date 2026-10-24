@@ -14,7 +14,12 @@ import {
   ExternalLink,
   PlusCircle,
   RefreshCw,
-  Clock
+  Clock,
+  Lock,
+  KeyRound,
+  EyeOff,
+  X,
+  Shield
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -51,6 +56,47 @@ export const UserDashboardPage: React.FC = () => {
 
   // Bid Modal
   const [isBidModalOpen, setIsBidModalOpen] = useState<boolean>(false);
+
+  // Change Password Modal
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
+  const [currentPassword, setCurrentPassword] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [showOldPassword, setShowOldPassword] = useState<boolean>(false);
+  const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState<boolean>(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentPassword) {
+      showToast('Please enter your current password', 'error');
+      return;
+    }
+    if (newPassword.length < 6) {
+      showToast('New password must be at least 6 characters', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showToast('New passwords do not match', 'error');
+      return;
+    }
+
+    try {
+      setIsSubmittingPassword(true);
+      const res = await api.changePassword({ currentPassword, newPassword });
+      if (res.success) {
+        showToast('Password changed successfully!', 'success');
+        setIsChangePasswordOpen(false);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to change password. Check your current password.', 'error');
+    } finally {
+      setIsSubmittingPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -158,32 +204,69 @@ export const UserDashboardPage: React.FC = () => {
           </p>
         </div>
 
-        {hasCompany ? (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsBidModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 via-brand-500 to-amber-500 text-white font-bold text-xs shadow-lg shadow-brand-500/25 hover:from-brand-500 hover:to-amber-400 transition-all flex items-center gap-1.5"
-            >
-              <Flame className="w-4 h-4" />
-              <span>Outbid & Boost Rank</span>
-            </button>
-            <Link
-              to={`/startup/${company?.slug}`}
-              className="p-2.5 rounded-xl bg-navy-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1"
-              title="View Public Profile"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </Link>
-          </div>
-        ) : (
-          <Link
-            to="/submit"
-            className="px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-bold text-xs shadow-lg shadow-brand-500/25 transition-all flex items-center gap-2"
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsChangePasswordOpen(true)}
+            className="px-3.5 py-2.5 rounded-xl bg-navy-900 border border-slate-700/80 hover:border-slate-500 text-slate-300 hover:text-white transition-all text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+            title="Update account password"
           >
-            <PlusCircle className="w-4 h-4" />
-            <span>List Your Startup</span>
-          </Link>
-        )}
+            <KeyRound className="w-4 h-4 text-amber-400" />
+            <span>Change Password</span>
+          </button>
+
+          {hasCompany ? (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsBidModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 via-brand-500 to-amber-500 text-white font-bold text-xs shadow-lg shadow-brand-500/25 hover:from-brand-500 hover:to-amber-400 transition-all flex items-center gap-1.5"
+              >
+                <Flame className="w-4 h-4" />
+                <span>Outbid & Boost Rank</span>
+              </button>
+              <Link
+                to={`/startup/${company?.slug}`}
+                className="p-2.5 rounded-xl bg-navy-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1"
+                title="View Public Profile"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </Link>
+            </div>
+          ) : (
+            <Link
+              to="/submit"
+              className="px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-bold text-xs shadow-lg shadow-brand-500/25 transition-all flex items-center gap-2"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>List Your Startup</span>
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Account Info & Security Bar */}
+      <div className="bg-navy-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 flex items-center justify-center font-bold text-sm">
+            {user?.name?.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <div className="text-white font-semibold flex items-center gap-2">
+              <span>{user?.name}</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/30 uppercase font-bold tracking-wider">
+                {user?.role}
+              </span>
+            </div>
+            <div className="text-slate-400 text-[11px] font-mono mt-0.5">{user?.email}</div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setIsChangePasswordOpen(true)}
+          className="px-3.5 py-2 rounded-xl bg-navy-950 border border-slate-700 hover:border-brand-500 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all self-start sm:self-auto"
+        >
+          <Lock className="w-3.5 h-3.5 text-amber-400" />
+          <span>Update Account Password</span>
+        </button>
       </div>
 
       {!hasCompany ? (
@@ -502,6 +585,125 @@ export const UserDashboardPage: React.FC = () => {
           leaderboardId="india-top-startups"
           onSuccess={loadDashboardData}
         />
+      )}
+
+      {/* Change Password Modal */}
+      {isChangePasswordOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-navy-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+            <button
+              onClick={() => {
+                setIsChangePasswordOpen(false);
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Change Your Password</h3>
+                <p className="text-[11px] text-slate-400">Update your account credentials securely</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Current Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showOldPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Enter current password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2.5 bg-navy-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOldPassword(!showOldPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    tabIndex={-1}
+                  >
+                    {showOldPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">New Password (Min 6 chars)</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    placeholder="Enter new password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2.5 bg-navy-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    tabIndex={-1}
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Confirm New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    placeholder="Repeat new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-navy-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsChangePasswordOpen(false)}
+                  disabled={isSubmittingPassword}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-navy-950 border border-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPassword || !currentPassword || newPassword.length < 6}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-brand-600 to-amber-500 hover:from-brand-500 hover:to-amber-400 transition-all shadow-md shadow-brand-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isSubmittingPassword ? (
+                    'Saving...'
+                  ) : (
+                    <>
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Save New Password</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

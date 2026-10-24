@@ -200,13 +200,22 @@ export const Navbar: React.FC = () => {
               </button>
             </>
           ) : (
-            <Link
-              to="/login"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-center py-2 text-slate-300 hover:text-white"
-            >
-              Sign In
-            </Link>
+            <div className="flex flex-col gap-2 pt-1 border-t border-slate-800/80">
+              <Link
+                to="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="text-center py-2 text-slate-300 hover:text-white"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/forgot-password"
+                onClick={() => setMobileMenuOpen(false)}
+                className="text-center text-xs text-amber-400/90 hover:text-amber-300 py-1 font-medium"
+              >
+                Forgot Password?
+              </Link>
+            </div>
           )}
         </div>
       )}

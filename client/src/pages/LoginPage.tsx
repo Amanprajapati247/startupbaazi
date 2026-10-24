@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Flame, Lock, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Flame, Lock, Mail, ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -119,7 +119,22 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-slate-800 text-center text-xs text-slate-400">
+        {/* Dedicated Forgot Password Action Card */}
+        <div className="mt-4 p-3.5 rounded-2xl bg-navy-950 border border-slate-800 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-slate-300">
+            <KeyRound className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>Forgot your password?</span>
+          </div>
+          <Link
+            to="/forgot-password"
+            className="text-brand-400 font-bold hover:underline hover:text-brand-300 flex items-center gap-1"
+          >
+            <span>Reset Password</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-slate-800 text-center text-xs text-slate-400">
           <span>Don't have an account yet? </span>
           <Link to="/register" className="text-brand-400 font-bold hover:underline">
             Register your Startup

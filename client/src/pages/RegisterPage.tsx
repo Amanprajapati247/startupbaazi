@@ -136,11 +136,19 @@ export const RegisterPage: React.FC = () => {
           </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-slate-800 text-center text-xs text-slate-400">
-          <span>Already have an account? </span>
-          <Link to="/login" className="text-brand-400 font-bold hover:underline">
-            Sign In here
-          </Link>
+        <div className="mt-6 pt-4 border-t border-slate-800 text-center text-xs text-slate-400 space-y-1.5">
+          <div>
+            <span>Already have an account? </span>
+            <Link to="/login" className="text-brand-400 font-bold hover:underline">
+              Sign In here
+            </Link>
+          </div>
+          <div>
+            <span>Forgot your credentials? </span>
+            <Link to="/forgot-password" className="text-amber-400 font-semibold hover:underline">
+              Reset Password
+            </Link>
+          </div>
         </div>
       </div>
     </div>
