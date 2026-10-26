@@ -107,6 +107,10 @@ export class EmailService {
 
     const textContent = `Hello ${userName},\n\nYour StartupBaazi password reset verification code is: ${resetCode}\n\nThis code expires in 1 hour.\nIf you did not request a password reset, please ignore this email.\n\nStartupBaazi Team`;
 
+    if (process.env.NODE_ENV === 'test') {
+      return { sent: true };
+    }
+
     if (!transporter) {
       console.log(`\n======================================================`);
       console.log(`📧 [StartupBaazi Email Service] (SMTP not configured in environment)`);

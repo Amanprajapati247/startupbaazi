@@ -242,23 +242,16 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
     if (emailResult.sent) {
       return res.json({
         success: true,
-        smtpConfigured: true,
-        message: `A 6-digit verification code has been delivered to your email (${user.email}). Please check your inbox and spam folder.`,
+        message: `A 6-digit verification code has been dispatched to your email (${user.email}). Please check your inbox and spam folder.`,
         data: {
           email: user.email,
         },
       });
     } else {
-      return res.json({
-        success: true,
-        smtpConfigured: false,
-        message: `Email delivery (SMTP) is not yet configured in your server environment. Add SMTP_USER and SMTP_PASS in Render/.env to send real emails.`,
-        data: {
-          email: user.email,
-          debugCode: resetCode,
-          smtpError: emailResult.reason,
-        },
-      });
+      throw new AppError(
+        `Unable to send verification code to ${user.email}. ${emailResult.reason || 'Email service (SMTP) is not configured in server environment.'}`,
+        500
+      );
     }
   } catch (err) {
     next(err);
