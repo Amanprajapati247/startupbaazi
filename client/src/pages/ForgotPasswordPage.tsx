@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Flame, Mail, Lock, KeyRound, ArrowRight, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Flame, Mail, Lock, KeyRound, ArrowRight, ArrowLeft, CheckCircle2, Eye, EyeOff, RotateCw } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
 
@@ -15,7 +15,7 @@ export const ForgotPasswordPage: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [generatedCodeHint, setGeneratedCodeHint] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
 
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,11 +28,8 @@ export const ForgotPasswordPage: React.FC = () => {
       setIsSubmitting(true);
       const res = await api.forgotPassword({ email });
       if (res.success) {
-        showToast(res.message || 'Reset code generated successfully', 'success');
-        if (res.data?.resetCode) {
-          setGeneratedCodeHint(res.data.resetCode);
-          setResetCode(res.data.resetCode);
-        }
+        showToast(res.message || 'Verification code sent to your email!', 'success');
+        setResetCode('');
         setStep('RESET');
       }
     } catch (err: any) {
@@ -42,10 +39,25 @@ export const ForgotPasswordPage: React.FC = () => {
     }
   };
 
+  const handleResendCode = async () => {
+    if (!email) return;
+    try {
+      setIsResending(true);
+      const res = await api.forgotPassword({ email });
+      if (res.success) {
+        showToast(`New verification code sent to ${email}`, 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to resend code', 'error');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetCode.trim()) {
-      showToast('Please enter the 6-digit reset code', 'error');
+      showToast('Please enter the 6-digit reset code sent to your email', 'error');
       return;
     }
     if (newPassword.length < 6) {
@@ -87,8 +99,8 @@ export const ForgotPasswordPage: React.FC = () => {
           {step === 'SUCCESS' ? 'Password Reset Complete' : 'Reset Your Password'}
         </h1>
         <p className="text-xs text-slate-400">
-          {step === 'REQUEST' && 'Enter your registered email address and we will generate your secure verification code.'}
-          {step === 'RESET' && `Verification code sent for ${email}. Enter the code and set your new password.`}
+          {step === 'REQUEST' && 'Enter your registered email address to receive your 6-digit verification code.'}
+          {step === 'RESET' && `We sent a 6-digit code to ${email}. Check your email inbox to proceed.`}
           {step === 'SUCCESS' && 'Your account password has been updated. You can now log in securely.'}
         </p>
       </div>
@@ -118,10 +130,10 @@ export const ForgotPasswordPage: React.FC = () => {
               className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 via-brand-500 to-amber-500 text-white font-bold text-xs shadow-lg shadow-brand-500/25 hover:from-brand-500 hover:to-amber-400 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {isSubmitting ? (
-                <span>Generating Code...</span>
+                <span>Sending Code to Email...</span>
               ) : (
                 <>
-                  <span>Send Reset Code</span>
+                  <span>Send Verification Code</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -131,26 +143,39 @@ export const ForgotPasswordPage: React.FC = () => {
 
         {step === 'RESET' && (
           <form onSubmit={handleResetPassword} className="space-y-4">
-            {generatedCodeHint && (
-              <div className="p-3 rounded-xl bg-brand-500/10 border border-brand-500/30 text-brand-300 text-xs flex items-center justify-between">
-                <div>
-                  <span className="font-semibold">Reset Code: </span>
-                  <span className="font-mono text-sm tracking-widest text-white font-bold">{generatedCodeHint}</span>
+            {/* Email Notice Card */}
+            <div className="p-3.5 rounded-2xl bg-navy-950 border border-slate-700/80 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                  <Mail className="w-4 h-4" />
+                  <span>Check Your Email</span>
                 </div>
-                <span className="text-[10px] text-slate-400">Valid 1 hour</span>
+                <button
+                  type="button"
+                  onClick={handleResendCode}
+                  disabled={isResending}
+                  className="text-[11px] text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3 h-3 ${isResending ? 'animate-spin' : ''}`} />
+                  <span>{isResending ? 'Sending...' : 'Resend Code'}</span>
+                </button>
               </div>
-            )}
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                We sent a 6-digit verification code to <strong className="text-white font-mono">{email}</strong>. Check your inbox and spam folder.
+              </p>
+            </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">6-Digit Reset Code</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Enter 6-Digit Code from Email</label>
               <div className="relative">
                 <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   required
-                  placeholder="e.g. 849201"
+                  maxLength={6}
+                  placeholder="Enter 6-digit code"
                   value={resetCode}
-                  onChange={(e) => setResetCode(e.target.value)}
+                  onChange={(e) => setResetCode(e.target.value.trim())}
                   className="w-full pl-10 pr-4 py-2.5 bg-navy-950 border border-slate-700/80 rounded-xl text-xs text-white font-mono tracking-widest placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors"
                 />
               </div>
@@ -163,6 +188,7 @@ export const ForgotPasswordPage: React.FC = () => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  minLength={6}
                   placeholder="••••••••"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
@@ -186,6 +212,7 @@ export const ForgotPasswordPage: React.FC = () => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  minLength={6}
                   placeholder="••••••••"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
@@ -196,7 +223,7 @@ export const ForgotPasswordPage: React.FC = () => {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || resetCode.length < 6}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 via-brand-500 to-amber-500 text-white font-bold text-xs shadow-lg shadow-brand-500/25 hover:from-brand-500 hover:to-amber-400 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {isSubmitting ? (
@@ -250,3 +277,4 @@ export const ForgotPasswordPage: React.FC = () => {
     </div>
   );
 };
+

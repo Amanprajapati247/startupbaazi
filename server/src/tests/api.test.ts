@@ -559,7 +559,7 @@ describe('StartupBaazi Full Production Readiness & QA Suite (12 Core Scenarios)'
       testUserId = registerRes.body.data.user.id;
     });
 
-    it('13A. Should generate a 6-digit reset code on forgot-password request', async () => {
+    it('13A. Should generate a 6-digit reset code on forgot-password request without leaking it in API response', async () => {
       const res = await request(app)
         .post('/api/auth/forgot-password')
         .send({ email: testUserEmail });
@@ -567,15 +567,17 @@ describe('StartupBaazi Full Production Readiness & QA Suite (12 Core Scenarios)'
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toBeDefined();
-      expect(res.body.data.resetCode).toBeDefined();
-      expect(res.body.data.resetCode.length).toBe(6);
+      expect(res.body.data.email).toBe(testUserEmail);
+      // Ensure resetCode is NOT leaked in the web response
+      expect(res.body.data.resetCode).toBeUndefined();
 
-      resetCode = res.body.data.resetCode;
-
-      // Verify token in database
+      // Verify token in database (which was dispatched via email)
       const userInDb = await prisma.user.findUnique({ where: { email: testUserEmail } });
-      expect(userInDb!.resetPasswordToken).toBe(resetCode);
+      expect(userInDb!.resetPasswordToken).toBeDefined();
+      expect(userInDb!.resetPasswordToken!.length).toBe(6);
       expect(userInDb!.resetPasswordExpires).toBeDefined();
+
+      resetCode = userInDb!.resetPasswordToken!;
     });
 
     it('13B. Should reject reset-password with incorrect reset code', async () => {

@@ -18,4 +18,11 @@ export const config = {
   upiMerchantName: process.env.UPI_MERCHANT_NAME || 'StartupBaazi Technologies',
   defaultMinBid: parseFloat(process.env.DEFAULT_MIN_BID_AMOUNT || '500'),
   defaultMinIncrement: parseFloat(process.env.DEFAULT_MIN_BID_INCREMENT || '100'),
+  // Email / SMTP Settings
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: parseInt(process.env.SMTP_PORT || '587', 10),
+  smtpSecure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || process.env.SMTP_USER || 'StartupBaazi <no-reply@startupbaazi.in>',
 };

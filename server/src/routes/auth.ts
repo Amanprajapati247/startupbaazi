@@ -8,6 +8,7 @@ import { authenticate } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { loginLimiter } from '../middleware/rateLimiter';
 import { NotificationService } from '../services/notificationService';
+import { EmailService } from '../services/emailService';
 
 const router = Router();
 
@@ -222,21 +223,27 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
       },
     });
 
-    console.log(`🔐 [Password Reset] Reset code generated for ${user.email}: ${resetCode}`);
+    console.log(`🔐 [Password Reset] Verification code generated for ${user.email}`);
+
+    // Send the verification code to the user's real email address
+    await EmailService.sendPasswordResetEmail({
+      toEmail: user.email,
+      userName: user.name,
+      resetCode,
+    });
 
     await NotificationService.createNotification({
       userId: user.id,
       title: 'Password Reset Code Requested',
-      message: `A password reset code (${resetCode}) was generated for your account. This code expires in 1 hour.`,
+      message: `A password reset code was dispatched to your email address (${user.email}). Valid for 1 hour.`,
       type: 'SYSTEM',
     });
 
     return res.json({
       success: true,
-      message: 'Password reset code generated successfully.',
+      message: `A 6-digit verification code has been sent to your email (${user.email}). Please check your inbox and spam folder.`,
       data: {
         email: user.email,
-        resetCode, // Frictionless UX so user can test and reset right away
       },
     });
   } catch (err) {
