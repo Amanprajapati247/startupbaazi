@@ -226,7 +226,7 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
     console.log(`🔐 [Password Reset] Verification code generated for ${user.email}`);
 
     // Send the verification code to the user's real email address
-    await EmailService.sendPasswordResetEmail({
+    const emailResult = await EmailService.sendPasswordResetEmail({
       toEmail: user.email,
       userName: user.name,
       resetCode,
@@ -235,17 +235,31 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
     await NotificationService.createNotification({
       userId: user.id,
       title: 'Password Reset Code Requested',
-      message: `A password reset code was dispatched to your email address (${user.email}). Valid for 1 hour.`,
+      message: `A password reset code was requested for your account (${user.email}). Valid for 1 hour.`,
       type: 'SYSTEM',
     });
 
-    return res.json({
-      success: true,
-      message: `A 6-digit verification code has been sent to your email (${user.email}). Please check your inbox and spam folder.`,
-      data: {
-        email: user.email,
-      },
-    });
+    if (emailResult.sent) {
+      return res.json({
+        success: true,
+        smtpConfigured: true,
+        message: `A 6-digit verification code has been delivered to your email (${user.email}). Please check your inbox and spam folder.`,
+        data: {
+          email: user.email,
+        },
+      });
+    } else {
+      return res.json({
+        success: true,
+        smtpConfigured: false,
+        message: `Email delivery (SMTP) is not yet configured in your server environment. Add SMTP_USER and SMTP_PASS in Render/.env to send real emails.`,
+        data: {
+          email: user.email,
+          debugCode: resetCode,
+          smtpError: emailResult.reason,
+        },
+      });
+    }
   } catch (err) {
     next(err);
   }

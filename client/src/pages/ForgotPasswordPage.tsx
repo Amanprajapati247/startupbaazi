@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Flame, Mail, Lock, KeyRound, ArrowRight, ArrowLeft, CheckCircle2, Eye, EyeOff, RotateCw } from 'lucide-react';
+import { Flame, Mail, Lock, KeyRound, ArrowRight, ArrowLeft, CheckCircle2, Eye, EyeOff, RotateCw, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
 
@@ -16,6 +16,8 @@ export const ForgotPasswordPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const [fallbackCode, setFallbackCode] = useState<string | null>(null);
+  const [smtpConfigured, setSmtpConfigured] = useState<boolean>(true);
 
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +30,13 @@ export const ForgotPasswordPage: React.FC = () => {
       setIsSubmitting(true);
       const res = await api.forgotPassword({ email });
       if (res.success) {
-        showToast(res.message || 'Verification code sent to your email!', 'success');
+        showToast(res.message || 'Verification code requested!', 'success');
+        setSmtpConfigured(res.smtpConfigured !== false);
+        if (res.data?.debugCode) {
+          setFallbackCode(res.data.debugCode);
+        } else {
+          setFallbackCode(null);
+        }
         setResetCode('');
         setStep('RESET');
       }
@@ -45,7 +53,11 @@ export const ForgotPasswordPage: React.FC = () => {
       setIsResending(true);
       const res = await api.forgotPassword({ email });
       if (res.success) {
-        showToast(`New verification code sent to ${email}`, 'success');
+        showToast(`New verification code generated for ${email}`, 'success');
+        setSmtpConfigured(res.smtpConfigured !== false);
+        if (res.data?.debugCode) {
+          setFallbackCode(res.data.debugCode);
+        }
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to resend code', 'error');
@@ -143,27 +155,57 @@ export const ForgotPasswordPage: React.FC = () => {
 
         {step === 'RESET' && (
           <form onSubmit={handleResetPassword} className="space-y-4">
-            {/* Email Notice Card */}
-            <div className="p-3.5 rounded-2xl bg-navy-950 border border-slate-700/80 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
-                  <Mail className="w-4 h-4" />
-                  <span>Check Your Email</span>
+            {/* Status / Instructions Banner */}
+            {smtpConfigured ? (
+              <div className="p-4 rounded-2xl bg-navy-950 border border-brand-500/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-brand-400">
+                    <Mail className="w-4 h-4" />
+                    <span>Check Your Email Inbox</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={isResending}
+                    className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold disabled:opacity-50"
+                  >
+                    <RotateCw className={`w-3 h-3 ${isResending ? 'animate-spin' : ''}`} />
+                    <span>{isResending ? 'Sending...' : 'Resend Code'}</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleResendCode}
-                  disabled={isResending}
-                  className="text-[11px] text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold disabled:opacity-50"
-                >
-                  <RotateCw className={`w-3 h-3 ${isResending ? 'animate-spin' : ''}`} />
-                  <span>{isResending ? 'Sending...' : 'Resend Code'}</span>
-                </button>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  A 6-digit verification code was sent to <strong className="text-white font-mono">{email}</strong>. Please check your inbox and your <strong>Spam / Junk</strong> folder.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                We sent a 6-digit verification code to <strong className="text-white font-mono">{email}</strong>. Check your inbox and spam folder.
-              </p>
-            </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2.5">
+                <div className="flex items-start gap-2 text-amber-400">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-300">Live Email (SMTP) Not Yet Configured on Server</h4>
+                    <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                      To receive codes directly in your email inbox, add <code className="text-amber-300 bg-amber-950/60 px-1 py-0.5 rounded">SMTP_USER</code> and <code className="text-amber-300 bg-amber-950/60 px-1 py-0.5 rounded">SMTP_PASS</code> in your Render environment settings.
+                    </p>
+                  </div>
+                </div>
+
+                {fallbackCode && (
+                  <div className="pt-2 border-t border-amber-500/20 flex items-center justify-between bg-navy-950/70 p-2.5 rounded-xl">
+                    <div>
+                      <p className="text-[10px] uppercase font-bold text-slate-400">Fallback Code (While SMTP is Pending)</p>
+                      <p className="text-base font-mono font-black text-amber-400 tracking-wider">{fallbackCode}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setResetCode(fallbackCode)}
+                      className="px-2.5 py-1 text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg font-semibold hover:bg-amber-500/30 transition-colors"
+                    >
+                      Autofill Code
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">Enter 6-Digit Code from Email</label>

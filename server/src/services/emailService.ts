@@ -1,24 +1,40 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { Transporter } from 'nodemailer';
 import { config } from '../config';
 
 export class EmailService {
-  private static transporter: nodemailer.Transporter | null = null;
+  private static transporter: Transporter | null = null;
 
-  private static getTransporter(): nodemailer.Transporter | null {
+  private static getTransporter(): Transporter | null {
     if (this.transporter) {
       return this.transporter;
     }
 
-    if (config.smtpHost && config.smtpUser && config.smtpPass) {
-      this.transporter = nodemailer.createTransport({
-        host: config.smtpHost,
-        port: config.smtpPort,
-        secure: config.smtpSecure,
-        auth: {
-          user: config.smtpUser,
-          pass: config.smtpPass,
-        },
-      });
+    if (config.smtpUser && config.smtpPass) {
+      const isGmail =
+        config.smtpHost === 'gmail' ||
+        config.smtpHost === 'smtp.gmail.com' ||
+        config.smtpUser.includes('@gmail.com') ||
+        !config.smtpHost;
+
+      if (isGmail) {
+        this.transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: config.smtpUser,
+            pass: config.smtpPass.replace(/\s+/g, ''), // Strip spaces from Gmail 16-char app passwords
+          },
+        });
+      } else {
+        this.transporter = nodemailer.createTransport({
+          host: config.smtpHost,
+          port: config.smtpPort,
+          secure: config.smtpSecure,
+          auth: {
+            user: config.smtpUser,
+            pass: config.smtpPass,
+          },
+        });
+      }
       return this.transporter;
     }
 
