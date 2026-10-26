@@ -504,6 +504,15 @@ export const BidModal: React.FC<BidModalProps> = ({
                   <span className="block text-[10px] text-slate-400 mt-0.5">Instant QR Code</span>
                 </button>
               </div>
+
+              {selectedProvider === 'RAZORPAY' && (
+                <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 flex items-center gap-1.5 mt-2">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                  <span>
+                    In Razorpay Test Mode, use UPI ID: <strong className="font-mono text-white">success@razorpay</strong> to simulate payment.
+                  </span>
+                </p>
+              )}
             </div>
 
             {/* Action Buttons */}
