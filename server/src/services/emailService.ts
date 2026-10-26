@@ -19,6 +19,9 @@ export class EmailService {
       if (isGmail) {
         this.transporter = nodemailer.createTransport({
           service: 'gmail',
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+          socketTimeout: 8000,
           auth: {
             user: config.smtpUser,
             pass: config.smtpPass.replace(/\s+/g, ''), // Strip spaces from Gmail 16-char app passwords
@@ -29,6 +32,9 @@ export class EmailService {
           host: config.smtpHost,
           port: config.smtpPort,
           secure: config.smtpSecure,
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+          socketTimeout: 8000,
           auth: {
             user: config.smtpUser,
             pass: config.smtpPass,
@@ -111,15 +117,82 @@ export class EmailService {
       return { sent: true };
     }
 
+    // 1. Check if Resend HTTPS API Key is configured (Recommended for Render Free Tier)
+    if (config.resendApiKey) {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: config.smtpFrom.includes('<') && !config.smtpFrom.includes('@gmail.com')
+              ? config.smtpFrom
+              : 'StartupBaazi <onboarding@resend.dev>',
+            to: [toEmail],
+            subject,
+            html: htmlContent,
+            text: textContent,
+          }),
+        });
+
+        const resData = (await response.json()) as any;
+        if (response.ok) {
+          console.log(`✅ [StartupBaazi Email Service] Email delivered to ${toEmail} via Resend HTTPS API`);
+          return { sent: true };
+        } else {
+          console.error(`❌ [StartupBaazi Email Service] Resend API error:`, resData);
+          return { sent: false, reason: resData.message || 'Resend API rejected dispatch' };
+        }
+      } catch (apiErr: any) {
+        console.error(`❌ [StartupBaazi Email Service] Resend network error:`, apiErr.message);
+        return { sent: false, reason: apiErr.message };
+      }
+    }
+
+    // 2. Check if Brevo HTTPS API Key is configured
+    if (config.brevoApiKey) {
+      try {
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'api-key': config.brevoApiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sender: { name: 'StartupBaazi', email: config.smtpUser || 'admin@startupbaazi.in' },
+            to: [{ email: toEmail, name: userName }],
+            subject,
+            htmlContent,
+            textContent,
+          }),
+        });
+
+        const resData = (await response.json()) as any;
+        if (response.ok) {
+          console.log(`✅ [StartupBaazi Email Service] Email delivered to ${toEmail} via Brevo HTTPS API`);
+          return { sent: true };
+        } else {
+          console.error(`❌ [StartupBaazi Email Service] Brevo API error:`, resData);
+          return { sent: false, reason: resData.message || 'Brevo API rejected dispatch' };
+        }
+      } catch (apiErr: any) {
+        console.error(`❌ [StartupBaazi Email Service] Brevo network error:`, apiErr.message);
+        return { sent: false, reason: apiErr.message };
+      }
+    }
+
+    // 3. Fallback to SMTP (Gmail / Custom SMTP)
     if (!transporter) {
       console.log(`\n======================================================`);
       console.log(`📧 [StartupBaazi Email Service] (SMTP not configured in environment)`);
       console.log(`   Recipient: ${toEmail}`);
       console.log(`   Verification Code: ${resetCode}`);
       console.log(`   To send via real Gmail / Resend / SendGrid SMTP, add:`);
-      console.log(`   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in environment.`);
+      console.log(`   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (or RESEND_API_KEY).`);
       console.log(`======================================================\n`);
-      return { sent: false, reason: 'SMTP credentials not configured in environment' };
+      return { sent: false, reason: 'SMTP credentials or RESEND_API_KEY not configured in environment' };
     }
 
     try {
@@ -135,7 +208,11 @@ export class EmailService {
       return { sent: true };
     } catch (err: any) {
       console.error(`❌ [StartupBaazi Email Service] Failed to send email to ${toEmail}:`, err.message);
-      return { sent: false, reason: err.message };
+      const isTimeout = err.code === 'ETIMEDOUT' || err.message?.includes('timeout') || err.code === 'ESOCKET';
+      const reason = isTimeout
+        ? 'SMTP connection timed out. (Render Free tier blocks outbound SMTP ports 465/587. Add RESEND_API_KEY in Render to send via HTTPS).'
+        : err.message;
+      return { sent: false, reason };
     }
   }
 }

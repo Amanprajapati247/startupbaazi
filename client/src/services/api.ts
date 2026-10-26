@@ -23,11 +23,16 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers,
+      signal: options.signal || controller.signal,
     });
+    clearTimeout(timeoutId);
 
     let data: any = null;
     const text = await response.text();
@@ -62,6 +67,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   } catch (err: any) {
     if (err instanceof ApiError) {
       throw err;
+    }
+    if (err.name === 'AbortError') {
+      throw new ApiError('Request timed out after 20 seconds. Please check your backend connection.');
     }
     throw new ApiError(
       err.message === 'Failed to fetch'

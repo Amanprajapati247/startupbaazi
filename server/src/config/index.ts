@@ -25,4 +25,7 @@ export const config = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: process.env.SMTP_FROM || process.env.SMTP_USER || 'StartupBaazi <no-reply@startupbaazi.in>',
+  // HTTPS API-based Email Providers (Render Free Tier compatible)
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  brevoApiKey: process.env.BREVO_API_KEY || '',
 };
