@@ -30,10 +30,10 @@ export const errorHandler = (
     });
   }
 
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
+  if (err instanceof AppError || err?.statusCode) {
+    return res.status(err.statusCode || 400).json({
       success: false,
-      message: err.message,
+      message: err.message || 'An error occurred',
     });
   }
 

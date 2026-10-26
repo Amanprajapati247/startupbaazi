@@ -23,18 +23,52 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-  const data = await response.json().catch(() => ({}));
+    let data: any = null;
+    const text = await response.text();
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Non-JSON response (e.g. gateway HTML error)
+    }
 
-  if (!response.ok) {
-    throw new ApiError(data.message || 'An unexpected error occurred', data.errors);
+    if (!response.ok) {
+      if (data && data.message) {
+        throw new ApiError(data.message, data.errors);
+      }
+
+      const fallbackMessage =
+        response.status === 401
+          ? 'Authentication required or session expired. Please sign in again.'
+          : response.status === 403
+          ? 'Permission denied. You are not authorized to perform this action.'
+          : response.status === 404
+          ? 'Service endpoint not found (404). Backend deployment is updating.'
+          : response.status === 400
+          ? 'Invalid request. Please check your current password and inputs.'
+          : response.status === 502 || response.status === 503
+          ? 'Backend server is starting up or waking up on Render. Please retry in a moment.'
+          : `Server returned status ${response.status}: ${response.statusText || 'Unexpected error'}`;
+
+      throw new ApiError(fallbackMessage);
+    }
+
+    return data as T;
+  } catch (err: any) {
+    if (err instanceof ApiError) {
+      throw err;
+    }
+    throw new ApiError(
+      err.message === 'Failed to fetch'
+        ? 'Cannot connect to backend server. Please verify backend status or network connection.'
+        : err.message || 'An unexpected error occurred'
+    );
   }
-
-  return data;
 }
 
 export const api = {

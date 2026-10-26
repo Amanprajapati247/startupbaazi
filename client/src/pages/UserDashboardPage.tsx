@@ -613,9 +613,22 @@ export const UserDashboardPage: React.FC = () => {
               </div>
             </div>
 
+            <div className="p-3 bg-navy-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
+              <span className="text-slate-400">Logged in as:</span>
+              <span className="text-white font-mono font-medium">{user?.email}</span>
+            </div>
+
             <form onSubmit={handleChangePassword} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Current Password</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">Current Password</label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-[11px] text-amber-400 hover:text-amber-300 hover:underline"
+                  >
+                    Forgot current password?
+                  </Link>
+                </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
@@ -702,6 +715,13 @@ export const UserDashboardPage: React.FC = () => {
                 </button>
               </div>
             </form>
+
+            <div className="text-center pt-3 border-t border-slate-800 text-xs text-slate-400">
+              <span>Don't remember your current password? </span>
+              <Link to="/forgot-password" className="text-brand-400 font-semibold hover:underline">
+                Reset via 6-digit code
+              </Link>
+            </div>
           </div>
         </div>
       )}
