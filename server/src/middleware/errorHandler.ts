@@ -20,9 +20,11 @@ export const errorHandler = (
   console.error('[Error Handler]', err);
 
   if (err instanceof ZodError) {
+    const errorMessages = err.errors.map((e) => e.message).filter(Boolean);
+    const detail = errorMessages.length > 0 ? errorMessages.join(', ') : 'Invalid input parameters';
     return res.status(400).json({
       success: false,
-      message: 'Validation failed',
+      message: `Validation failed: ${detail}`,
       errors: err.errors.map((e) => ({
         path: e.path.join('.'),
         message: e.message,

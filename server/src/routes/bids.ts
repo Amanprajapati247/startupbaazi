@@ -7,8 +7,8 @@ import { AppError } from '../middleware/errorHandler';
 const router = Router();
 
 const bidIntentSchema = z.object({
-  listingId: z.string().uuid('Valid listing ID required'),
-  leaderboardId: z.string().uuid('Valid leaderboard ID required'),
+  listingId: z.string().min(1, 'Listing ID is required'),
+  leaderboardId: z.string().min(1, 'Leaderboard ID or slug is required'),
   amount: z.number().positive('Bid amount must be a positive number'),
   provider: z.enum(['RAZORPAY', 'STRIPE', 'UPI_DIRECT']).default('RAZORPAY').optional(),
 });

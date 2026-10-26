@@ -50,9 +50,11 @@ export class BiddingService {
       throw new AppError('You are not authorized to place bids on behalf of this company.', 403);
     }
 
-    // 3. Verify leaderboard exists and is active
-    const leaderboard = await prisma.leaderboard.findUnique({
-      where: { id: leaderboardId },
+    // 3. Verify leaderboard exists and is active (lookup by ID or by slug)
+    const leaderboard = await prisma.leaderboard.findFirst({
+      where: {
+        OR: [{ id: leaderboardId }, { slug: leaderboardId }],
+      },
     });
 
     if (!leaderboard || !leaderboard.isActive) {
@@ -85,7 +87,7 @@ export class BiddingService {
         companyName: listing.company.name,
         successUrl: `${config.clientUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${config.clientUrl}/dashboard?payment=cancelled`,
-        metadata: { listingId, leaderboardId, userId },
+        metadata: { listingId, leaderboardId: leaderboard.id, userId },
       });
     } else {
       const receipt = `bid_${Date.now()}_${listingId.substring(0, 6)}`;
@@ -95,7 +97,7 @@ export class BiddingService {
         notes: {
           listingId,
           companyName: listing.company.name,
-          leaderboardId,
+          leaderboardId: leaderboard.id,
           userId,
         },
       });
@@ -106,7 +108,7 @@ export class BiddingService {
       const newBid = await tx.bid.create({
         data: {
           listingId,
-          leaderboardId,
+          leaderboardId: leaderboard.id,
           userId,
           amount,
           status: 'PENDING_PAYMENT',
